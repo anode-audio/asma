@@ -83,6 +83,7 @@ struct JobResult {
     std::string hash;
     NameInfo name;
     std::string error;
+    bool unreadable = false; // access error: retry next scan, change nothing now
 };
 
 JobResult process(const fs::path& root, const Job& job)
@@ -93,6 +94,10 @@ JobResult process(const fs::path& root, const Job& job)
         const fs::path full = root / fromUtf8(job.disk.relPath);
         r.probe = probeFile(full);
         r.hash = contentHash(full, r.probe->hashOffset, r.probe->hashLength);
+    } catch (const FileAccessError& e) {
+        r.probe.reset();
+        r.error = e.what();
+        r.unreadable = true;
     } catch (const std::exception& e) {
         r.probe.reset();
         r.error = e.what();
@@ -153,6 +158,13 @@ FileRecord recordFrom(std::int64_t rootId, const DiskEntry& disk, const JobResul
 void apply(Library& lib, std::int64_t rootId, const Job& job, const JobResult& r, ScanStats& stats,
            std::unordered_set<std::int64_t>& gone)
 {
+    if (r.unreadable) {
+        // Permissions, a vanished file or a drive going away mid-scan. Not the
+        // file's fault: leave any existing row as it is and try again next time.
+        ++stats.skipped;
+        return;
+    }
+
     FileRecord rec = recordFrom(rootId, job.disk, r);
 
     if (!r.probe) {

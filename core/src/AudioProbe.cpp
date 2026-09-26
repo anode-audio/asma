@@ -5,6 +5,7 @@
 #include "asma/core/Fs.h"
 
 #include <cctype>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -114,23 +115,44 @@ ProbeResult probeOgg(const fs::path& path, std::uint64_t fileSize)
 
 } // namespace
 
+namespace {
+
+// The format named by the file's first bytes, if recognisable. Sample packs
+// ship files with the wrong extension (Apple's own Logic library has AIFF
+// data in .wav files), so the header beats the extension.
+std::optional<AudioFormat> sniffFormat(const unsigned char* b, std::size_t n)
+{
+    auto is = [&](std::size_t at, const char* tag) { return n >= at + 4 && std::memcmp(b + at, tag, 4) == 0; };
+    if ((is(0, "RIFF") && is(8, "WAVE")) || is(0, "RF64")) return AudioFormat::Wav;
+    if (is(0, "FORM") && (is(8, "AIFF") || is(8, "AIFC"))) return AudioFormat::Aiff;
+    if (is(0, "fLaC")) return AudioFormat::Flac;
+    if (is(0, "OggS")) return AudioFormat::Ogg;
+    if (n >= 3 && std::memcmp(b, "ID3", 3) == 0) return AudioFormat::Mp3;
+    if (n >= 2 && b[0] == 0xFF && (b[1] & 0xE0) == 0xE0) return AudioFormat::Mp3;
+    return std::nullopt;
+}
+
+} // namespace
+
 ProbeResult probeFile(const fs::path& path)
 {
-    const auto format = formatFromExtension(path);
-    if (!format) throw ProbeError("unsupported file extension");
+    const auto byExtension = formatFromExtension(path);
+    if (!byExtension) throw ProbeError("unsupported file extension");
 
     std::error_code ec;
     const std::uint64_t size = fs::file_size(path, ec);
-    if (ec) throw ProbeError("cannot read file size: " + ec.message());
+    if (ec) throw FileAccessError("cannot read file size: " + ec.message());
 
-    switch (*format) {
-    case AudioFormat::Wav:
-    case AudioFormat::Aiff: {
-        FilePtr file(openFileRead(path));
-        if (!file) throw ProbeError("cannot open file");
-        return *format == AudioFormat::Wav ? detail::probeWav(file.get(), size)
-                                           : detail::probeAiff(file.get(), size);
-    }
+    FilePtr file(openFileRead(path));
+    if (!file) throw FileAccessError("cannot open file");
+    unsigned char header[12] = {};
+    const std::size_t got = std::fread(header, 1, sizeof header, file.get());
+    const AudioFormat format = sniffFormat(header, got).value_or(*byExtension);
+    if (!seekFile(file.get(), 0)) throw FileAccessError("cannot seek in file");
+
+    switch (format) {
+    case AudioFormat::Wav: return detail::probeWav(file.get(), size);
+    case AudioFormat::Aiff: return detail::probeAiff(file.get(), size);
     case AudioFormat::Flac: return probeFlac(path, size);
     case AudioFormat::Mp3: return probeMp3(path, size);
     case AudioFormat::Ogg: return probeOgg(path, size);

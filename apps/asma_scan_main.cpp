@@ -69,7 +69,8 @@ int main(int argc, char** argv)
                  .num("unchanged", static_cast<std::int64_t>(s.unchanged))
                  .num("relinked", static_cast<std::int64_t>(s.relinked))
                  .num("missing", static_cast<std::int64_t>(s.missing))
-                 .num("failed", static_cast<std::int64_t>(s.failed)));
+                 .num("failed", static_cast<std::int64_t>(s.failed))
+                 .num("skipped", static_cast<std::int64_t>(s.skipped)));
         return kOk;
     } catch (const UsageError& e) {
         std::cerr << e.what() << "\n";

@@ -93,7 +93,7 @@ int cmdScan(Args& args, Db& db, const std::filesystem::path& dbPath)
         std::cerr << "\r";
         std::cout << "root " << r.id << ": added " << s.added << ", updated " << s.updated << ", unchanged "
                   << s.unchanged << ", relinked " << s.relinked << ", missing " << s.missing << ", failed "
-                  << s.failed << "\n";
+                  << s.failed << ", skipped " << s.skipped << "\n";
     }
     return kOk;
 }

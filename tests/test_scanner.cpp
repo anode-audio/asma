@@ -225,6 +225,35 @@ TEST_CASE("an unreadable folder's files come back when readable again", "[scanne
 }
 #endif
 
+#ifndef _WIN32
+TEST_CASE("an unreadable new file is skipped, not failed, and added once readable", "[scanner]")
+{
+    Fixture f;
+    f.wav("locked.wav", 1);
+    fs::permissions(f.root / "locked.wav", fs::perms::none);
+    const ScanStats first = f.scan();
+    CHECK(first.failed == 0);
+    CHECK(first.skipped == 1);
+    CHECK_FALSE(f.lib.fileByPath(f.rootId, "locked.wav").has_value());
+
+    fs::permissions(f.root / "locked.wav", fs::perms::owner_read | fs::perms::owner_write);
+    CHECK(f.scan().added == 1);
+}
+
+TEST_CASE("a known file that cannot be read keeps its ok row", "[scanner]")
+{
+    Fixture f;
+    f.wav("a.wav", 1);
+    f.scan();
+    touchLater(f.root / "a.wav");
+    fs::permissions(f.root / "a.wav", fs::perms::none);
+    const ScanStats s = f.scan();
+    fs::permissions(f.root / "a.wav", fs::perms::owner_read | fs::perms::owner_write);
+    CHECK(s.skipped == 1);
+    CHECK(f.file("a.wav").status == FileStatus::Ok);
+}
+#endif
+
 TEST_CASE("broken files are failed with a reason and skipped until they change", "[scanner]")
 {
     Fixture f;

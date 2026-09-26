@@ -17,6 +17,7 @@ struct ScanStats {
     std::size_t relinked = 0;
     std::size_t missing = 0;
     std::size_t failed = 0;
+    std::size_t skipped = 0; // could not be read this time; retried next scan
 };
 
 struct ScanOptions {

@@ -13,15 +13,20 @@ scanner" before scanning starts, so the scan skips it until the file changes.
 
 ## Events
 
-| event           | fields                                                           | meaning                             |
-| --------------- | ---------------------------------------------------------------- | ----------------------------------- |
-| `marked_failed` | `path`                                                           | a `--fail` path was recorded        |
-| `start`         | `path`                                                           | a worker began probing this file    |
-| `progress`      | `done`, `total`, `path`                                          | this file finished                  |
-| `done`          | `added`, `updated`, `unchanged`, `relinked`, `missing`, `failed` | the scan completed                  |
-| `error`         | `code` (`locked` or `failed`), optional `pid`, `message`         | the scan did not run or did not end |
+| event           | fields                                                                      | meaning                             |
+| --------------- | --------------------------------------------------------------------------- | ----------------------------------- |
+| `marked_failed` | `path`                                                                      | a `--fail` path was recorded        |
+| `start`         | `path`                                                                      | a worker began probing this file    |
+| `progress`      | `done`, `total`, `path`                                                     | this file finished                  |
+| `done`          | `added`, `updated`, `unchanged`, `relinked`, `missing`, `failed`, `skipped` | the scan completed                  |
+| `error`         | `code` (`locked` or `failed`), optional `pid`, `message`                    | the scan did not run or did not end |
 
 Paths are root-relative, UTF-8, with `/` separators.
+
+`skipped` counts files that could not be read this time (permissions, a file
+that vanished, a drive that went away mid-scan). Their rows are left as they
+were and the next scan tries again. `failed` is only for files whose content
+could not be parsed; they stay failed until they change.
 
 ## Exit codes
 

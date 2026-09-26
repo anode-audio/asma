@@ -143,3 +143,25 @@ TEST_CASE("A missing file throws ProbeError", "[probe]")
     TempDir dir;
     CHECK_THROWS_AS(probeFile(dir.path() / "nope.wav"), ProbeError);
 }
+
+TEST_CASE("A missing file is an access error", "[probe]")
+{
+    TempDir dir;
+    CHECK_THROWS_AS(probeFile(dir.path() / "nope.wav"), FileAccessError);
+}
+
+TEST_CASE("The file's own header wins over a wrong extension", "[probe]")
+{
+    TempDir dir;
+    const auto aiffAsWav = dir.path() / "snare.wav";
+    test::AiffSpec aiff;
+    aiff.frames = 22050;
+    test::writeAiff(aiffAsWav, aiff);
+    const ProbeResult r = probeFile(aiffAsWav);
+    CHECK(r.format == AudioFormat::Aiff);
+    CHECK(r.durationSeconds == Catch::Approx(0.5));
+
+    const auto wavAsAiff = dir.path() / "kick.aif";
+    test::writeWav(wavAsAiff, {});
+    CHECK(probeFile(wavAsAiff).format == AudioFormat::Wav);
+}

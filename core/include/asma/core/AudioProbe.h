@@ -22,6 +22,13 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+// The file could not be opened, sized, seeked or fully read: a missing,
+// unreadable or vanished file rather than bad content. Worth retrying later.
+class FileAccessError : public ProbeError {
+public:
+    using ProbeError::ProbeError;
+};
+
 struct AcidInfo {
     bool oneShot = false;
     float tempo = 0.0f; // 0 when the chunk carries none

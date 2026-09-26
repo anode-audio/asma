@@ -62,3 +62,12 @@ TEST_CASE("A missing file throws ProbeError", "[hash]")
     TempDir dir;
     CHECK_THROWS_AS(contentHash(dir.path() / "nope.wav", 0, 10), ProbeError);
 }
+
+TEST_CASE("A read that ends early is an access error, not a hash", "[hash]")
+{
+    TempDir dir;
+    const auto p = dir.path() / "x.bin";
+    test::writeBytes(p, "abc");
+    CHECK_THROWS_AS(contentHash(p, 0, 100), FileAccessError);
+    CHECK_THROWS_AS(contentHash(dir.path() / "nope.wav", 0, 10), FileAccessError);
+}
