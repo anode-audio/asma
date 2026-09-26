@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "asma/core/WriterLock.h"
 
-#include <chrono>
 #include <fstream>
 #include <string>
 #include <utility>
@@ -12,6 +11,7 @@
 #include <cerrno>
 #include <csignal>
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif
@@ -24,24 +24,11 @@ namespace {
 
 constexpr const char* kLockName = "writer.lock";
 
-bool createExclusive(const fs::path& file, const std::string& content)
-{
 #ifdef _WIN32
-    HANDLE handle = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (handle == INVALID_HANDLE_VALUE) return false;
-    DWORD written = 0;
-    WriteFile(handle, content.data(), static_cast<DWORD>(content.size()), &written, nullptr);
-    CloseHandle(handle);
-    return true;
-#else
-    const int fd = ::open(file.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
-    if (fd < 0) return false;
-    const ssize_t written = ::write(fd, content.data(), content.size());
-    (void)written;
-    ::close(fd);
-    return true;
+// Lock one byte far past the end of the file so the PID text stays readable
+// by other processes while the lock is held.
+constexpr DWORD kLockOffsetHigh = 1;
 #endif
-}
 
 } // namespace
 
@@ -82,47 +69,65 @@ std::optional<WriterLock> WriterLock::tryAcquire(const fs::path& dir)
 {
     fs::create_directories(dir);
     const fs::path file = dir / kLockName;
-    const std::string content = std::to_string(currentProcessId());
+    const std::string pid = std::to_string(currentProcessId());
 
-    for (int attempt = 0; attempt < 2; ++attempt) {
-        if (createExclusive(file, content)) return WriterLock(file);
-
-        if (const auto pid = holder(dir)) {
-            if (processAlive(*pid)) return std::nullopt;
-        } else {
-            // No readable PID: the owner may be between create and write.
-            std::error_code ec;
-            const auto written = fs::last_write_time(file, ec);
-            if (!ec && fs::file_time_type::clock::now() - written < std::chrono::seconds(5)) return std::nullopt;
-        }
-        std::error_code ec;
-        fs::remove(file, ec); // stale: take it over on the next attempt
+#ifdef _WIN32
+    HANDLE handle = CreateFileW(file.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return std::nullopt;
+    OVERLAPPED region{};
+    region.OffsetHigh = kLockOffsetHigh;
+    if (!LockFileEx(handle, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &region)) {
+        CloseHandle(handle);
+        return std::nullopt;
     }
-    return std::nullopt;
+    SetFilePointer(handle, 0, nullptr, FILE_BEGIN);
+    SetEndOfFile(handle);
+    DWORD written = 0;
+    WriteFile(handle, pid.data(), static_cast<DWORD>(pid.size()), &written, nullptr);
+    FlushFileBuffers(handle);
+    return WriterLock(handle);
+#else
+    const int fd = ::open(file.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+    if (fd < 0) return std::nullopt;
+    if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        ::close(fd);
+        return std::nullopt;
+    }
+    if (::ftruncate(fd, 0) == 0) {
+        const ssize_t written = ::pwrite(fd, pid.data(), pid.size(), 0);
+        (void)written;
+    }
+    return WriterLock(fd);
+#endif
 }
 
 void WriterLock::release() noexcept
 {
-    if (file_.empty()) return;
-    try {
-        if (holder(file_.parent_path()) == currentProcessId()) {
-            std::error_code ec;
-            fs::remove(file_, ec);
-        }
-    } catch (...) {
-    }
-    file_.clear();
+    if (handle_ == kInvalid) return;
+    // The file stays: deleting it would let a newcomer lock a fresh inode while
+    // a waiter still holds the old one open.
+#ifdef _WIN32
+    OVERLAPPED region{};
+    region.OffsetHigh = kLockOffsetHigh;
+    UnlockFileEx(static_cast<HANDLE>(handle_), 0, 1, 0, &region);
+    CloseHandle(static_cast<HANDLE>(handle_));
+#else
+    ::flock(handle_, LOCK_UN);
+    ::close(handle_);
+#endif
+    handle_ = kInvalid;
 }
 
 WriterLock::~WriterLock() { release(); }
 
-WriterLock::WriterLock(WriterLock&& other) noexcept : file_(std::exchange(other.file_, {})) {}
+WriterLock::WriterLock(WriterLock&& other) noexcept : handle_(std::exchange(other.handle_, kInvalid)) {}
 
 WriterLock& WriterLock::operator=(WriterLock&& other) noexcept
 {
     if (this != &other) {
         release();
-        file_ = std::exchange(other.file_, {});
+        handle_ = std::exchange(other.handle_, kInvalid);
     }
     return *this;
 }

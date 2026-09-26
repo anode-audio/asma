@@ -25,7 +25,6 @@ TEST_CASE("the lock is released on destruction", "[lock]")
         auto lock = WriterLock::tryAcquire(dir.path());
         REQUIRE(lock.has_value());
     }
-    CHECK_FALSE(fs::exists(dir.path() / "writer.lock"));
     CHECK(WriterLock::tryAcquire(dir.path()).has_value());
 }
 
@@ -38,13 +37,19 @@ TEST_CASE("a lock left by a dead process is taken over", "[lock]")
     CHECK(WriterLock::holder(dir.path()) == WriterLock::currentProcessId());
 }
 
-TEST_CASE("an unreadable lock is respected while fresh and taken when old", "[lock]")
+TEST_CASE("a stale lock naming a reused, live pid is taken over", "[lock]")
+{
+    // After a crash or reboot the recorded pid may belong to an unrelated live
+    // process. Only a lock actually held by a running asma may block.
+    TempDir dir;
+    asma::test::writeBytes(dir.path() / "writer.lock", "1");
+    CHECK(WriterLock::tryAcquire(dir.path()).has_value());
+}
+
+TEST_CASE("an empty lock file does not block", "[lock]")
 {
     TempDir dir;
-    const fs::path file = dir.path() / "writer.lock";
-    asma::test::writeBytes(file, "");
-    CHECK_FALSE(WriterLock::tryAcquire(dir.path()).has_value());
-    fs::last_write_time(file, fs::last_write_time(file) - std::chrono::seconds(10));
+    asma::test::writeBytes(dir.path() / "writer.lock", "");
     CHECK(WriterLock::tryAcquire(dir.path()).has_value());
 }
 
@@ -61,6 +66,6 @@ TEST_CASE("a moved lock releases once", "[lock]")
     auto first = WriterLock::tryAcquire(dir.path());
     REQUIRE(first.has_value());
     WriterLock moved = std::move(*first);
-    first.reset(); // the moved-from lock must not remove the file
-    CHECK(fs::exists(dir.path() / "writer.lock"));
+    first.reset(); // the moved-from lock must not release the lock
+    CHECK_FALSE(WriterLock::tryAcquire(dir.path()).has_value());
 }
