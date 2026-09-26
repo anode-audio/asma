@@ -4,6 +4,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <fstream>
+#include <iterator>
+#include <string>
 
 using asma::WriterLock;
 using asma::test::TempDir;
@@ -69,3 +72,18 @@ TEST_CASE("a moved lock releases once", "[lock]")
     first.reset(); // the moved-from lock must not release the lock
     CHECK_FALSE(WriterLock::tryAcquire(dir.path()).has_value());
 }
+
+#ifndef _WIN32
+TEST_CASE("a symlinked lock file is refused and its target left alone", "[lock]")
+{
+    TempDir dir;
+    const fs::path decoy = dir.path() / "precious.txt";
+    asma::test::writeBytes(decoy, "do not truncate me");
+    fs::create_symlink(decoy, dir.path() / "writer.lock");
+
+    CHECK_FALSE(WriterLock::tryAcquire(dir.path()).has_value());
+    std::ifstream in(decoy);
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(content == "do not truncate me");
+}
+#endif

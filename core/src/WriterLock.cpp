@@ -72,9 +72,16 @@ std::optional<WriterLock> WriterLock::tryAcquire(const fs::path& dir)
     const std::string pid = std::to_string(currentProcessId());
 
 #ifdef _WIN32
+    // Open the link itself, never its target, and refuse anything that is a
+    // symlink or junction: truncating the lock file must not touch another file.
     HANDLE handle = CreateFileW(file.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                                nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     if (handle == INVALID_HANDLE_VALUE) return std::nullopt;
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (!GetFileInformationByHandle(handle, &info) || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        CloseHandle(handle);
+        return std::nullopt;
+    }
     OVERLAPPED region{};
     region.OffsetHigh = kLockOffsetHigh;
     if (!LockFileEx(handle, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &region)) {
@@ -88,7 +95,9 @@ std::optional<WriterLock> WriterLock::tryAcquire(const fs::path& dir)
     FlushFileBuffers(handle);
     return WriterLock(handle);
 #else
-    const int fd = ::open(file.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+    // O_NOFOLLOW: a symlinked lock file fails to open (ELOOP) instead of letting
+    // the truncate below clobber whatever it points at.
+    const int fd = ::open(file.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0644);
     if (fd < 0) return std::nullopt;
     if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
         ::close(fd);
