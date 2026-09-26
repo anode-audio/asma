@@ -291,16 +291,21 @@ model and view state, never the library itself.
 
 CMake + Ninja. Dependencies fetched with CPM/FetchContent at pinned versions:
 
-| Dependency           | Use                       | License       |
-| -------------------- | ------------------------- | ------------- |
-| JUCE 8               | UI, audio, plugin formats | AGPLv3        |
-| clap-juce-extensions | CLAP target               | MIT           |
-| SQLite (with FTS5)   | database                  | public domain |
-| xxHash               | content hashing           | BSD-2         |
-| Signalsmith Stretch  | time-stretch, pitch-shift | MIT           |
-| libebur128           | LUFS                      | MIT           |
-| Ableton Link         | standalone tempo sync     | GPLv2+        |
-| Catch2               | tests                     | BSL-1.0       |
+| Dependency                        | Use                              | License               |
+| --------------------------------- | -------------------------------- | --------------------- |
+| JUCE 8                            | UI, audio, plugin formats        | AGPLv3                |
+| clap-juce-extensions              | CLAP target                      | MIT                   |
+| SQLite (with FTS5)                | database                         | public domain         |
+| xxHash                            | content hashing                  | BSD-2                 |
+| Signalsmith Stretch               | time-stretch, pitch-shift        | MIT                   |
+| dr_libs (dr_flac, dr_mp3, dr_wav) | decoding in asma-core            | MIT-0 / public domain |
+| stb_vorbis                        | Ogg Vorbis decoding in asma-core | MIT / public domain   |
+| libebur128                        | LUFS                             | MIT                   |
+| Ableton Link                      | standalone tempo sync            | GPLv2+                |
+| Catch2                            | tests                            | BSL-1.0               |
+
+asma-core decodes audio with dr_libs and stb_vorbis rather than JUCE, so the
+core, the CLI and the scanner build without JUCE.
 
 ## 12. Testing
 

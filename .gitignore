@@ -1,0 +1,8 @@
+/build/
+/build-*/
+/.worktrees/
+.DS_Store
+/.vscode/
+/.idea/
+CMakeUserPresets.json
+/.superpowers/
