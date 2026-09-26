@@ -16,3 +16,7 @@ if(WIN32)
     NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
 endif()
 asma_set_warnings(asma_core)
+set_source_files_properties(
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor_dr.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor_stb_vorbis.c
+  PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
