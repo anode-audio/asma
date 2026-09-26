@@ -3,6 +3,13 @@ file(GLOB ASMA_CORE_SOURCES CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
 
+set(ASMA_TOKENS_FILE ${PROJECT_SOURCE_DIR}/data/instrument_tokens.txt)
+file(READ ${ASMA_TOKENS_FILE} ASMA_INSTRUMENT_TOKENS)
+configure_file(src/InstrumentTokensData.cpp.in
+  ${CMAKE_CURRENT_BINARY_DIR}/InstrumentTokensData.cpp @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ASMA_TOKENS_FILE})
+list(APPEND ASMA_CORE_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/InstrumentTokensData.cpp)
+
 add_library(asma_core STATIC ${ASMA_CORE_SOURCES})
 add_library(asma::core ALIAS asma_core)
 target_include_directories(asma_core

@@ -1,0 +1,24 @@
+# Instrument tag dictionary, embedded into asma-core at build time.
+# Each line is "tag: token, token, ...". Tokens are matched against the
+# lowercase words of a file name and its folders. The first tag to claim a
+# token wins. Do not use the at-sign character anywhere in this file.
+kick: kick, kicks, kik, bd, bassdrum
+snare: snare, snares, snr, sd
+clap: clap, claps, clp
+hihat: hihat, hihats, hh, hat, hats
+cymbal: cymbal, cymbals, crash, ride, splash
+tom: tom, toms
+perc: perc, percs, percussion, shaker, tambourine, conga, bongo, rim, rimshot, cowbell
+808: 808, 808s
+bass: bass, basses, sub, reese
+synth: synth, synths
+lead: lead, leads
+pad: pad, pads
+pluck: pluck, plucks
+keys: keys, piano, rhodes, epiano, organ
+guitar: guitar, guitars, gtr
+strings: strings, violin, cello, viola
+brass: brass, horn, horns, trumpet, trombone, sax
+vocal: vocal, vocals, vox, acapella, chant
+fx: fx, sfx, riser, risers, impact, impacts, sweep, downlifter, uplifter, noise
+drums: drums, drum, beat, beats, breaks, break, top, tops
