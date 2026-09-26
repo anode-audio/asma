@@ -249,7 +249,11 @@ ScanStats scanRoot(Db& db, std::int64_t rootId, const ScanOptions& options)
             const FileRecord& file = it->second;
             if (file.size == disk.size && file.mtime == disk.mtime) {
                 if (file.status == FileStatus::Missing) {
-                    lib.setStatus(file.id, FileStatus::Ok);
+                    // Back unchanged. A row that was failed before it went
+                    // missing kept its reason and stays failed, so a file that
+                    // crashed the scanner is never retried just for returning.
+                    const bool wasFailed = !file.failureReason.empty();
+                    lib.setStatus(file.id, wasFailed ? FileStatus::Failed : FileStatus::Ok, file.failureReason);
                     ++stats.updated;
                 } else {
                     ++stats.unchanged; // failed files stay failed until they change
@@ -264,7 +268,7 @@ ScanStats scanRoot(Db& db, std::int64_t rootId, const ScanOptions& options)
         if (!rootPresent || walked.complete) {
             for (const auto& [relPath, file] : known) {
                 if (seen.count(relPath) || file.status == FileStatus::Missing) continue;
-                lib.setStatus(file.id, FileStatus::Missing);
+                lib.setStatus(file.id, FileStatus::Missing, file.failureReason); // keep why it failed
                 gone.insert(file.id);
             }
         }

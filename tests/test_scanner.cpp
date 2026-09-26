@@ -275,6 +275,25 @@ TEST_CASE("broken files are failed with a reason and skipped until they change",
     CHECK(f.file("broken.wav").status == FileStatus::Ok);
 }
 
+TEST_CASE("a failed file that goes missing and comes back is still failed", "[scanner]")
+{
+    Fixture f;
+    test::writeBytes(f.root / "Broken.wav", "not audio");
+    f.wav("crashy.wav", 2);
+    f.scan();
+    markFailedPath(f.db, f.rootId, "crashy.wav", "crashed the scanner");
+    const fs::path away = f.dir.path() / "unplugged";
+    fs::rename(f.root, away);
+    f.scan();
+    fs::rename(away, f.root);
+    f.scan();
+
+    CHECK(f.file("Broken.wav").status == FileStatus::Failed);
+    CHECK_FALSE(f.file("Broken.wav").failureReason.empty());
+    CHECK(f.file("crashy.wav").status == FileStatus::Failed);
+    CHECK(f.file("crashy.wav").failureReason == "crashed the scanner");
+}
+
 TEST_CASE("markFailedPath makes later scans skip the file", "[scanner]")
 {
     Fixture f;
