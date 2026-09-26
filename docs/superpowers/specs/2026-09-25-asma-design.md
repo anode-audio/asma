@@ -322,10 +322,10 @@ CMake + Ninja. Dependencies fetched with CPM/FetchContent at pinned versions:
 ## 13. Distribution
 
 - GitHub Releases: macOS `.pkg`, Windows Inno Setup installer, Linux `.tar.gz`
-  plus an AppImage for the standalone.
-- Listed on the Anode Labs website and on Gumroad as a free ($0+) product.
-- Code signing follows whatever bitcrust settles on; the first public beta can
-  ship unsigned with install notes.
+  with a static executable + plugin plus an AppImage for the standalone.
+- Listed on the Anode Labs website, no Gumroad.
+- Code signing is for macos only, windows costs too much and Linux doesn't need
+  any.
 
 ## 14. Open items outside this spec
 
