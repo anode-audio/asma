@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "Args.h"
+#include "CliCommon.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -28,4 +29,13 @@ TEST_CASE("unknown options stay in rest for the caller to reject", "[args]")
 {
     Args args({"--bogus", "x"});
     CHECK(args.rest() == Strings{"--bogus", "x"});
+}
+
+TEST_CASE("a relative --db becomes an absolute path", "[args]")
+{
+    Args args({"--db", "lib.db", "scan"});
+    const auto path = asma::cli::resolveDbPath(args);
+    CHECK(path.is_absolute());
+    CHECK(path.filename() == "lib.db");
+    CHECK(path.has_parent_path());
 }

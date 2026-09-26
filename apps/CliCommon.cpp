@@ -11,7 +11,8 @@ namespace asma::cli {
 
 std::filesystem::path resolveDbPath(Args& args)
 {
-    if (auto db = args.option("db")) return fromUtf8(*db);
+    // Absolute, so the lock directory (the parent) is never empty.
+    if (auto db = args.option("db")) return std::filesystem::absolute(fromUtf8(*db));
     return defaultDataDir() / "library.db";
 }
 
