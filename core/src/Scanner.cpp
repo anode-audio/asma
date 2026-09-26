@@ -178,9 +178,18 @@ void apply(Library& lib, std::int64_t rootId, const Job& job, const JobResult& r
         return;
     }
 
+    // A missing row whose root folder is absent is offline, not moved: an
+    // unplugged drive must get its rows back on remount, even if copies of
+    // its files exist elsewhere.
     const auto candidates = lib.relinkCandidates(rec.contentHash, rec.size);
-    if (!candidates.empty()) {
-        rec.id = candidates.front().id;
+    const auto moved = std::find_if(candidates.begin(), candidates.end(), [&](const FileRecord& c) {
+        if (c.rootId == rootId) return true;
+        const auto candidateRoot = lib.root(c.rootId);
+        std::error_code ec;
+        return candidateRoot && fs::is_directory(fromUtf8(candidateRoot->path), ec);
+    });
+    if (moved != candidates.end()) {
+        rec.id = moved->id;
         lib.updateFile(rec);
         lib.setDerived(rec.id, derived);
         gone.erase(rec.id);

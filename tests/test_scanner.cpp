@@ -131,6 +131,35 @@ TEST_CASE("a file moved to another root is re-linked there", "[scanner]")
     CHECK(f.lib.fileById(id)->rootId == otherId);
 }
 
+TEST_CASE("a copy in another root does not take the row of a file on an unplugged drive", "[scanner]")
+{
+    Fixture f;
+    const fs::path other = f.dir.path() / "other";
+    fs::create_directories(other);
+    const auto otherId = f.lib.addRoot(other);
+    f.wav("Kick.wav", 1);
+    f.scan();
+    const auto id = f.file("Kick.wav").id;
+    f.lib.addUserTag(id, "favourite");
+
+    fs::copy_file(f.root / "Kick.wav", other / "Kick_copy.wav");
+    const fs::path away = f.dir.path() / "unplugged";
+    fs::rename(f.root, away);
+    f.scan(); // the drive is gone: the row goes missing
+    const ScanStats s = scanRoot(f.db, otherId);
+    CHECK(s.relinked == 0);
+    CHECK(s.added == 1);
+
+    fs::rename(away, f.root);
+    f.scan();
+    const auto back = f.lib.fileById(id).value();
+    CHECK(back.rootId == f.rootId);
+    CHECK(back.status == FileStatus::Ok);
+    const auto tags = f.lib.tags(id);
+    CHECK(std::find(tags.begin(), tags.end(), std::make_pair(std::string("favourite"), TagSource::User))
+          != tags.end());
+}
+
 TEST_CASE("duplicate copies do not steal each other's rows", "[scanner]")
 {
     Fixture f;
