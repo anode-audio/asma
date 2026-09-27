@@ -49,10 +49,10 @@ could not be parsed or decoded; they are not retried until they change.
 
 ## Crash recovery (supervisor contract)
 
-Several files are processed in parallel, so a crash cannot be pinned on one
-file from the last line alone. The supervisor keeps the set of paths that have
-a `start` (or `analyse_start`) but no matching `progress` (or
-`analyse_progress`). When the worker exits without finishing, the supervisor
-restarts it with `--threads 1`, and when a single-threaded worker dies, the
-path it started last is passed back with `--fail` if it died while indexing,
-or `--fail-analysis` if it died while analysing.
+Several files are processed in parallel, so a crash cannot be pinned on one file
+from the last line alone. The supervisor keeps the set of paths that have a
+`start` (or `analyse_start`) but no matching `progress` (or `analyse_progress`).
+When the worker exits without finishing, the supervisor restarts it with
+`--threads 1`, and when a single-threaded worker dies, the path it started last
+is passed back with `--fail` if it died while indexing, or `--fail-analysis` if
+it died while analysing.
