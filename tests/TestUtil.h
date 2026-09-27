@@ -150,6 +150,7 @@ struct WavSpec {
     std::optional<std::pair<bool, float>> acid; // {oneShot, tempo}
     std::optional<int> smplUnityNote;
     std::vector<std::pair<std::string, std::string>> chunksBeforeData; // {4-char id, payload}
+    std::uint16_t formatTag = 1; // 1 = PCM; anything else makes an undecodable file
 };
 
 inline void writeWav(const fs::path& path, const WavSpec& spec)
@@ -157,7 +158,7 @@ inline void writeWav(const fs::path& path, const WavSpec& spec)
     using namespace detail;
     const int blockAlign = spec.channels * spec.bitsPerSample / 8;
     std::string fmt;
-    putLe16(fmt, 1);
+    putLe16(fmt, spec.formatTag);
     putLe16(fmt, static_cast<std::uint16_t>(spec.channels));
     putLe32(fmt, static_cast<std::uint32_t>(spec.sampleRate));
     putLe32(fmt, static_cast<std::uint32_t>(spec.sampleRate * blockAlign));
@@ -193,6 +194,32 @@ inline void writeWav(const fs::path& path, const WavSpec& spec)
     putChunkLe(body, "data",
                sampleBytes(static_cast<std::size_t>(spec.frames) * static_cast<std::size_t>(blockAlign), spec.seed));
 
+    std::string file = "RIFF";
+    putLe32(file, static_cast<std::uint32_t>(body.size()));
+    file += body;
+    writeBytes(path, file);
+}
+
+// 16-bit mono PCM WAV of the given samples (clipped to -1..1).
+inline void writeWavSamples(const fs::path& path, int sampleRate, const std::vector<float>& samples)
+{
+    using namespace detail;
+    std::string fmt;
+    putLe16(fmt, 1);
+    putLe16(fmt, 1);
+    putLe32(fmt, static_cast<std::uint32_t>(sampleRate));
+    putLe32(fmt, static_cast<std::uint32_t>(sampleRate * 2));
+    putLe16(fmt, 2);
+    putLe16(fmt, 16);
+    std::string data;
+    data.reserve(samples.size() * 2);
+    for (float s : samples) {
+        const float clipped = s < -1.0f ? -1.0f : (s > 1.0f ? 1.0f : s);
+        putLe16(data, static_cast<std::uint16_t>(static_cast<std::int16_t>(std::lround(clipped * 32767.0f))));
+    }
+    std::string body = "WAVE";
+    putChunkLe(body, "fmt ", fmt);
+    putChunkLe(body, "data", data);
     std::string file = "RIFF";
     putLe32(file, static_cast<std::uint32_t>(body.size()));
     file += body;

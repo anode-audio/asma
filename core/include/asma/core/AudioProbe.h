@@ -48,6 +48,11 @@ struct ProbeResult {
     std::optional<int> smplUnityNote; // MIDI note, 60 = C4
 };
 
+// The format named by the file's first bytes, falling back to the extension
+// when the header is not recognisable. Throws ProbeError for an unsupported
+// extension and FileAccessError when the file cannot be opened.
+AudioFormat detectFormat(const std::filesystem::path& path);
+
 // Reads headers only (MP3 also needs a frame scan). Throws ProbeError for
 // unreadable, unsupported or malformed files.
 ProbeResult probeFile(const std::filesystem::path& path);
