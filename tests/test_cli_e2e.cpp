@@ -147,3 +147,42 @@ TEST_CASE("bad usage exits with 2", "[e2e]")
     CHECK(cli.runAsma("query --key H").exitCode == 2);
     CHECK(cli.runScan("").exitCode == 2);
 }
+
+TEST_CASE("scan analyses by default and --no-analysis skips it", "[e2e]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    const RunResult quick = cli.runAsma("scan --no-analysis");
+    CHECK(quick.out.find("analysis:") == std::string::npos);
+    const RunResult full = cli.runAsma("scan");
+    CHECK(full.out.find("analysis: analysed 2, failed 0, skipped 0") != std::string::npos);
+}
+
+TEST_CASE("similar lists other files with a similarity score", "[e2e]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan").exitCode == 0);
+    const RunResult r = cli.runAsma("similar " + quote(cli.lib / "Loops" / "Bass_Loop_Am_128.wav") + " --json");
+    CHECK(r.exitCode == 0);
+    CHECK(r.out.find("Kick") != std::string::npos);
+    CHECK(r.out.find("\"similarity\":") != std::string::npos);
+    CHECK(r.out.find("Bass_Loop") == std::string::npos);
+
+    CHECK(cli.runAsma("similar " + quote(cli.lib / "nope.wav")).exitCode == 1);
+    CHECK(cli.runAsma("similar").exitCode == 2);
+}
+
+TEST_CASE("asma-scan reports analysis and honours --fail-analysis", "[e2e]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runScan("--root 1 --no-analysis").exitCode == 0);
+    const RunResult r =
+        cli.runScan("--root 1 --fail-analysis " + quote(asma::fromUtf8("Loops/Bass_Loop_Am_128.wav")));
+    CHECK(r.exitCode == 0);
+    CHECK(r.out.find("{\"event\":\"marked_analysis_failed\",\"path\":\"Loops/Bass_Loop_Am_128.wav\"}") !=
+          std::string::npos);
+    CHECK(r.out.find("{\"event\":\"analyse_start\",\"path\":\"Drums/Kick") != std::string::npos);
+    CHECK(r.out.find("{\"event\":\"analyse_done\",\"analysed\":1,\"failed\":0,\"skipped\":0}") != std::string::npos);
+}

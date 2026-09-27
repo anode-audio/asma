@@ -3,6 +3,7 @@
 #include "Args.h"
 #include "CliCommon.h"
 
+#include "asma/core/Analyser.h"
 #include "asma/core/Db.h"
 #include "asma/core/Fs.h"
 #include "asma/core/Json.h"
@@ -30,8 +31,11 @@ int main(int argc, char** argv)
         const auto root = args.option("root");
         const auto threads = args.option("threads");
         const auto failed = args.options("fail");
+        const auto analysisFailed = args.options("fail-analysis");
+        const bool analyseFiles = !args.flag("no-analysis");
         if (!db || !root || !args.rest().empty())
-            throw UsageError("usage: asma-scan --db PATH --root ID [--threads N] [--fail RELPATH]...");
+            throw UsageError("usage: asma-scan --db PATH --root ID [--threads N] [--no-analysis] "
+                             "[--fail RELPATH]... [--fail-analysis RELPATH]...");
 
         const std::filesystem::path dbPath = fromUtf8(*db);
         auto lock = WriterLock::tryAcquire(dbPath.parent_path());
@@ -49,6 +53,11 @@ int main(int argc, char** argv)
             const std::string rel = toUtf8(fromUtf8(path));
             markFailedPath(database, rootId, rel, "crashed the scanner");
             emit(JsonLine().str("event", "marked_failed").str("path", rel));
+        }
+        for (const auto& path : analysisFailed) {
+            const std::string rel = toUtf8(fromUtf8(path));
+            markAnalysisFailed(database, rootId, rel, "crashed the analyser");
+            emit(JsonLine().str("event", "marked_analysis_failed").str("path", rel));
         }
 
         ScanOptions options;
@@ -71,6 +80,28 @@ int main(int argc, char** argv)
                  .num("missing", static_cast<std::int64_t>(s.missing))
                  .num("failed", static_cast<std::int64_t>(s.failed))
                  .num("skipped", static_cast<std::int64_t>(s.skipped)));
+
+        if (analyseFiles) {
+            AnalyseOptions analysis;
+            analysis.threads = options.threads;
+            analysis.rootId = rootId;
+            analysis.onFileStart = [](std::string_view rel) {
+                emit(JsonLine().str("event", "analyse_start").str("path", rel));
+            };
+            analysis.onProgress = [](std::size_t done, std::size_t total, std::string_view rel) {
+                emit(JsonLine()
+                         .str("event", "analyse_progress")
+                         .num("done", static_cast<std::int64_t>(done))
+                         .num("total", static_cast<std::int64_t>(total))
+                         .str("path", rel));
+            };
+            const AnalyseStats a = analysePending(database, analysis);
+            emit(JsonLine()
+                     .str("event", "analyse_done")
+                     .num("analysed", static_cast<std::int64_t>(a.analysed))
+                     .num("failed", static_cast<std::int64_t>(a.failed))
+                     .num("skipped", static_cast<std::int64_t>(a.skipped)));
+        }
         return kOk;
     } catch (const UsageError& e) {
         std::cerr << e.what() << "\n";
