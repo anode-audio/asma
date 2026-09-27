@@ -37,7 +37,12 @@ void readFrames(int channels, std::uint64_t maxFrames, DecodedAudio& audio, Read
         if (got == 0) return;
         for (std::uint64_t i = 0; i < got; ++i) {
             float sum = 0.0f;
-            for (int c = 0; c < channels; ++c) sum += buffer[static_cast<std::size_t>(i * channels + c)];
+            for (int c = 0; c < channels; ++c) {
+                // Broken float renders carry NaN, inf and absurd values; one
+                // such sample would poison every descriptor of the file.
+                const float x = buffer[static_cast<std::size_t>(i * channels + c)];
+                sum += std::isfinite(x) ? std::clamp(x, -16.0f, 16.0f) : 0.0f;
+            }
             audio.mono.push_back(sum / static_cast<float>(channels));
         }
         remaining -= got;
@@ -152,7 +157,9 @@ DecodedAudio decodeFile(const fs::path& path, double maxSeconds)
     case AudioFormat::Mp3: audio = decodeMp3(path, maxSeconds); break;
     case AudioFormat::Ogg: audio = decodeOgg(path, maxSeconds); break;
     }
-    if (audio.sampleRate <= 0) throw ProbeError("stream has no sample rate");
+    // Rates outside what audio hardware uses come from corrupt headers; below
+    // ~90 Hz the analysis frames would have no hop at all.
+    if (audio.sampleRate < 1000 || audio.sampleRate > 768000) throw ProbeError("unsupported sample rate");
     if (audio.mono.empty()) throw ProbeError("stream has no audio frames");
     return audio;
 }

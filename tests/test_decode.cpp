@@ -5,6 +5,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 
 using namespace asma;
 using asma::test::TempDir;
@@ -85,4 +86,32 @@ TEST_CASE("Undecodable and missing files throw", "[decode]")
     CHECK_NOTHROW(probeFile(odd));
     CHECK_THROWS_AS(decodeFile(odd), ProbeError);
     CHECK_THROWS_AS(decodeFile(dir.path() / "nope.wav"), FileAccessError);
+}
+
+TEST_CASE("An absurd sample rate is a decode error, not a runaway", "[decode]")
+{
+    TempDir dir;
+    const auto p = dir.path() / "40hz.wav";
+    test::WavSpec spec;
+    spec.sampleRate = 40;
+    spec.frames = 400;
+    test::writeWav(p, spec);
+    CHECK_THROWS_AS(decodeFile(p), ProbeError);
+}
+
+TEST_CASE("Non-finite and huge float samples decode as finite values", "[decode]")
+{
+    TempDir dir;
+    const auto p = dir.path() / "garbage-float.wav";
+    test::WavSpec spec;
+    spec.formatTag = 3; // IEEE float: the random bytes include NaN, inf and 1e38
+    spec.bitsPerSample = 32;
+    spec.frames = 8000;
+    test::writeWav(p, spec);
+    const DecodedAudio a = decodeFile(p);
+    REQUIRE(a.mono.size() == 8000);
+    for (float x : a.mono) {
+        REQUIRE(std::isfinite(x));
+        REQUIRE(std::abs(x) <= 16.0f);
+    }
 }

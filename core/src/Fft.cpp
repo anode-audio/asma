@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "Fft.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -66,6 +67,7 @@ std::vector<std::vector<float>> stft(const std::vector<float>& signal, std::size
         window[i] = static_cast<float>(0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(i) / static_cast<double>(size)));
     const auto w = twiddles(size);
 
+    hop = std::max<std::size_t>(hop, 1); // a zero hop would never advance
     std::vector<std::vector<float>> frames;
     frames.reserve(signal.size() / hop + 1);
     std::vector<std::complex<float>> buffer(size);
