@@ -17,7 +17,7 @@ target_include_directories(asma_core
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(asma_core
   PUBLIC asma_sqlite
-  PRIVATE asma_xxhash asma_dr_libs asma_stb Threads::Threads)
+  PRIVATE asma_xxhash asma_dr_libs asma_stb asma_ebur128 Threads::Threads)
 if(WIN32)
   target_compile_definitions(asma_core PUBLIC
     NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)

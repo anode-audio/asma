@@ -20,7 +20,12 @@ FetchContent_Declare(stb
   GIT_REPOSITORY https://github.com/nothings/stb.git
   GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20
   SOURCE_SUBDIR _none)
-FetchContent_MakeAvailable(sqlite xxhash dr_libs stb)
+FetchContent_Declare(ebur128
+  GIT_REPOSITORY https://github.com/jiixyj/libebur128.git
+  GIT_TAG v1.2.6
+  GIT_SHALLOW TRUE
+  SOURCE_SUBDIR _none)
+FetchContent_MakeAvailable(sqlite xxhash dr_libs stb ebur128)
 
 add_library(asma_sqlite STATIC ${sqlite_SOURCE_DIR}/sqlite3.c)
 target_include_directories(asma_sqlite SYSTEM PUBLIC ${sqlite_SOURCE_DIR})
@@ -42,3 +47,17 @@ target_include_directories(asma_dr_libs SYSTEM INTERFACE ${dr_libs_SOURCE_DIR})
 
 add_library(asma_stb INTERFACE)
 target_include_directories(asma_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
+add_library(asma_ebur128 STATIC ${ebur128_SOURCE_DIR}/ebur128/ebur128.c)
+target_include_directories(asma_ebur128
+  SYSTEM PUBLIC ${ebur128_SOURCE_DIR}/ebur128
+  PRIVATE ${ebur128_SOURCE_DIR}/ebur128/queue)
+if(MSVC)
+  target_compile_definitions(asma_ebur128 PRIVATE _USE_MATH_DEFINES)
+  target_compile_options(asma_ebur128 PRIVATE /w)
+else()
+  target_compile_options(asma_ebur128 PRIVATE -w)
+endif()
+if(UNIX AND NOT APPLE)
+  target_link_libraries(asma_ebur128 PUBLIC m)
+endif()
