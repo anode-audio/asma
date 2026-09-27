@@ -12,7 +12,7 @@ namespace asma {
 namespace {
 
 // Append-only. Never edit a migration that has shipped; add a new one.
-constexpr std::array<std::string_view, 1> kMigrations = {
+constexpr std::array<std::string_view, 2> kMigrations = {
     R"SQL(
 CREATE TABLE roots (
     id INTEGER PRIMARY KEY,
@@ -69,14 +69,36 @@ CREATE VIRTUAL TABLE fts_files USING fts5(
     prefix = '2 3'
 );
 )SQL",
+    R"SQL(
+ALTER TABLE features ADD COLUMN bpm_source TEXT CHECK (bpm_source IN ('embedded', 'filename', 'analysis'));
+ALTER TABLE features ADD COLUMN key_source TEXT CHECK (key_source IN ('embedded', 'filename', 'analysis'));
+ALTER TABLE features ADD COLUMN loop_source TEXT CHECK (loop_source IN ('embedded', 'filename', 'analysis'));
+ALTER TABLE features ADD COLUMN peak REAL;
+ALTER TABLE features ADD COLUMN lufs REAL;
+ALTER TABLE features ADD COLUMN centroid REAL;
+ALTER TABLE features ADD COLUMN rolloff REAL;
+ALTER TABLE features ADD COLUMN flatness REAL;
+ALTER TABLE features ADD COLUMN onset_density REAL;
+ALTER TABLE features ADD COLUMN feature_vector BLOB;
+ALTER TABLE files ADD COLUMN analysis_error TEXT;
+
+-- Version 1 only stored embedded (confidence 1.0) or file-name values.
+UPDATE features SET bpm_source = CASE WHEN bpm_confidence >= 1.0 THEN 'embedded' ELSE 'filename' END
+    WHERE bpm IS NOT NULL;
+UPDATE features SET key_source = 'filename' WHERE key IS NOT NULL;
+UPDATE features SET loop_source = 'filename' WHERE is_loop IS NOT NULL;
+
+CREATE INDEX files_analysis_pending ON files(analysis_version) WHERE status = 'ok';
+)SQL",
 };
 
 } // namespace
 
 int currentSchemaVersion() { return static_cast<int>(kMigrations.size()); }
 
-void migrate(Db& db)
+void migrate(Db& db, int targetVersion)
 {
+    if (targetVersion < 0 || targetVersion > currentSchemaVersion()) targetVersion = currentSchemaVersion();
     for (;;) {
         // Read the version inside the write transaction so two processes that
         // open the same new database cannot both apply the same migration.
@@ -86,7 +108,7 @@ void migrate(Db& db)
             throw DbError("database schema version " + std::to_string(version)
                           + " is newer than this asma build supports ("
                           + std::to_string(currentSchemaVersion()) + ")");
-        if (version == currentSchemaVersion()) {
+        if (version >= targetVersion) {
             tx.commit();
             return;
         }

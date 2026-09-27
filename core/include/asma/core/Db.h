@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 struct sqlite3;
 struct sqlite3_stmt;
@@ -33,6 +34,7 @@ public:
     Statement& bind(int index, double value);
     Statement& bind(int index, std::string_view value);
     Statement& bindNull(int index);
+    Statement& bindBlob(int index, const void* data, std::size_t size);
 
     template <typename T>
     Statement& bindOptional(int index, const std::optional<T>& value)
@@ -48,6 +50,7 @@ public:
     std::int64_t getInt(int column) const;
     double getDouble(int column) const;
     std::string getText(int column) const;
+    std::vector<unsigned char> getBlob(int column) const;
 
 private:
     void check(int rc, std::string_view what);
@@ -61,8 +64,9 @@ public:
     // Opens or creates the file (and its parent directories), enables WAL and
     // migrates to the current schema.
     static Db open(const std::filesystem::path& file);
-    // Private in-memory database with the current schema, for tests.
-    static Db openInMemory();
+    // Private in-memory database migrated to schemaVersion (default: the
+    // current one), for tests.
+    static Db openInMemory(int schemaVersion = -1);
 
     ~Db();
     Db(Db&& other) noexcept;

@@ -68,6 +68,12 @@ Statement& Statement::bind(int index, std::string_view value)
     return *this;
 }
 
+Statement& Statement::bindBlob(int index, const void* data, std::size_t size)
+{
+    check(sqlite3_bind_blob64(stmt_, index, data, static_cast<sqlite3_uint64>(size), SQLITE_TRANSIENT), "bind failed");
+    return *this;
+}
+
 Statement& Statement::bindNull(int index)
 {
     check(sqlite3_bind_null(stmt_, index), "bind failed");
@@ -107,6 +113,13 @@ std::string Statement::getText(int column) const
     return std::string(text, static_cast<std::size_t>(sqlite3_column_bytes(stmt_, column)));
 }
 
+std::vector<unsigned char> Statement::getBlob(int column) const
+{
+    const auto* data = static_cast<const unsigned char*>(sqlite3_column_blob(stmt_, column));
+    const auto size = static_cast<std::size_t>(sqlite3_column_bytes(stmt_, column));
+    return data ? std::vector<unsigned char>(data, data + size) : std::vector<unsigned char>();
+}
+
 Db Db::openHandle(const std::string& utf8Name)
 {
     sqlite3* raw = nullptr;
@@ -128,10 +141,10 @@ Db Db::open(const std::filesystem::path& file)
     return db;
 }
 
-Db Db::openInMemory()
+Db Db::openInMemory(int schemaVersion)
 {
     Db db = openHandle(":memory:");
-    migrate(db);
+    migrate(db, schemaVersion < 0 ? currentSchemaVersion() : schemaVersion);
     return db;
 }
 

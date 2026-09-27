@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include "asma/core/Analysis.h"
 #include "asma/core/Db.h"
 
 #include <cstdint>
@@ -22,6 +23,10 @@ struct Root {
 enum class FileStatus { Ok, Missing, Failed };
 enum class TagSource { Auto, Embedded, User };
 
+// Where a BPM, key or loop flag came from. Embedded and file-name values
+// always win over analysis.
+enum class FeatureSource { Embedded, Filename, Analysis };
+
 struct FileRecord {
     std::int64_t id = 0;
     std::int64_t rootId = 0;
@@ -38,13 +43,17 @@ struct FileRecord {
     std::string failureReason;
 };
 
-// Metadata derived from headers and file names (Plan 2 adds DSP analysis).
+// Metadata derived from headers and file names; derived() also reports what
+// analysis filled in.
 struct DerivedInfo {
     std::optional<double> bpm;
     double bpmConfidence = 0.0;
+    FeatureSource bpmSource = FeatureSource::Filename;
     std::optional<std::string> key;
     double keyConfidence = 0.0;
+    FeatureSource keySource = FeatureSource::Filename;
     std::optional<bool> isLoop;
+    FeatureSource loopSource = FeatureSource::Filename;
     std::optional<int> rootNote;
     std::vector<std::pair<std::string, TagSource>> tags;
 };
@@ -63,16 +72,27 @@ public:
     std::vector<FileRecord> filesInRoot(std::int64_t rootId);
     std::optional<FileRecord> fileById(std::int64_t id);
     std::optional<FileRecord> fileByPath(std::int64_t rootId, std::string_view relPath);
+    // The file at an absolute path, looked up through the root that contains it.
+    std::optional<FileRecord> fileByAbsolutePath(const std::filesystem::path& path);
     // Missing rows in any root whose content matches.
     std::vector<FileRecord> relinkCandidates(std::string_view contentHash, std::int64_t size);
 
     std::int64_t insertFile(const FileRecord& file);
     void updateFile(const FileRecord& file); // by file.id, every column
     void setStatus(std::int64_t fileId, FileStatus status, std::string_view reason = {});
+    // Content changed: forget analysis output and queue the file again.
     void resetAnalysis(std::int64_t fileId);
 
-    // Replaces the features row and the auto/embedded tags; user tags stay.
+    // Replaces header/file-name features and the auto/embedded tags. User tags
+    // stay, and so do analysed values the new info has nothing to replace with.
     void setDerived(std::int64_t fileId, const DerivedInfo& info);
+    // Stores analysis output and marks the file analysed at kAnalysisVersion.
+    // BPM, key and loop are only written where no embedded or file-name value
+    // exists.
+    void setAnalysis(std::int64_t fileId, const AnalysisResult& result);
+    // Marks the file analysed at kAnalysisVersion without results, so it is
+    // not retried until its content changes.
+    void setAnalysisError(std::int64_t fileId, std::string_view reason);
     std::optional<DerivedInfo> derived(std::int64_t fileId); // tags left empty
 
     void addUserTag(std::int64_t fileId, std::string_view tag);

@@ -112,6 +112,7 @@ DerivedInfo derive(const JobResult& r)
     if (probe.acid && probe.acid->tempo >= 20.0f && probe.acid->tempo <= 400.0f) {
         d.bpm = probe.acid->tempo;
         d.bpmConfidence = 1.0;
+        d.bpmSource = FeatureSource::Embedded;
     } else if (r.name.bpm) {
         d.bpm = r.name.bpm;
         d.bpmConfidence = 0.9;
@@ -121,6 +122,7 @@ DerivedInfo derive(const JobResult& r)
         d.keyConfidence = 0.9;
     }
     d.isLoop = probe.acid ? std::optional<bool>(!probe.acid->oneShot) : r.name.isLoop;
+    d.loopSource = probe.acid ? FeatureSource::Embedded : FeatureSource::Filename;
     d.rootNote = probe.smplUnityNote;
     for (auto& tag : InstrumentDictionary::builtin().tagsFor(r.name.tokens)) d.tags.emplace_back(tag, TagSource::Auto);
     return d;

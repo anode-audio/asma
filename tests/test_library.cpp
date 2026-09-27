@@ -169,3 +169,128 @@ TEST_CASE("setStatus to ok clears the failure reason", "[library]")
     lib.setStatus(id, FileStatus::Ok);
     CHECK(lib.fileById(id)->failureReason.empty());
 }
+
+namespace {
+
+AnalysisResult analysed(std::optional<double> bpm, std::optional<std::string> key, std::optional<bool> loop)
+{
+    AnalysisResult r;
+    r.loudness = {0.5, -12.0};
+    r.bpm = bpm;
+    r.bpmConfidence = 0.6;
+    r.key = std::move(key);
+    r.keyConfidence = 0.7;
+    r.isLoop = loop;
+    r.featureVector.assign(kFeatureVectorSize, 1.0f);
+    return r;
+}
+
+int analysisVersion(Db& db, std::int64_t id)
+{
+    auto q = db.prepare("SELECT analysis_version FROM files WHERE id = ?");
+    q.bind(1, id);
+    q.step();
+    return static_cast<int>(q.getInt(0));
+}
+
+} // namespace
+
+TEST_CASE("setAnalysis fills gaps but never overrides file-name values", "[library]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto id = lib.insertFile(sampleRecord(lib.addRoot(dir.path()), "Loops/Bass_Loop_128.wav"));
+    DerivedInfo named;
+    named.bpm = 128.0;
+    named.bpmConfidence = 0.9;
+    named.isLoop = true;
+    lib.setDerived(id, named);
+
+    lib.setAnalysis(id, analysed(64.0, "Am", false));
+    const auto d = lib.derived(id).value();
+    CHECK(d.bpm == 128.0);
+    CHECK(d.bpmSource == FeatureSource::Filename);
+    CHECK(d.isLoop == true);
+    CHECK(d.loopSource == FeatureSource::Filename);
+    CHECK(d.key == "Am");
+    CHECK(d.keySource == FeatureSource::Analysis);
+    CHECK(d.keyConfidence == 0.7);
+    CHECK(analysisVersion(db, id) == kAnalysisVersion);
+}
+
+TEST_CASE("setDerived keeps analysed values it has nothing to replace with", "[library]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto id = lib.insertFile(sampleRecord(lib.addRoot(dir.path()), "a.wav"));
+    lib.setDerived(id, {});
+    lib.setAnalysis(id, analysed(120.0, "C", true));
+
+    lib.setDerived(id, {}); // e.g. the file was moved and re-linked
+    auto d = lib.derived(id).value();
+    CHECK(d.bpm == 120.0);
+    CHECK(d.bpmSource == FeatureSource::Analysis);
+    CHECK(d.key == "C");
+
+    DerivedInfo named;
+    named.key = "Dm";
+    named.keyConfidence = 0.9;
+    lib.setDerived(id, named); // renamed to carry a key: the name wins
+    d = lib.derived(id).value();
+    CHECK(d.key == "Dm");
+    CHECK(d.keySource == FeatureSource::Filename);
+    CHECK(d.bpm == 120.0);
+}
+
+TEST_CASE("resetAnalysis forgets analysis output only", "[library]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto id = lib.insertFile(sampleRecord(lib.addRoot(dir.path()), "a.wav"));
+    DerivedInfo named;
+    named.key = "Dm";
+    named.keyConfidence = 0.9;
+    lib.setDerived(id, named);
+    lib.setAnalysis(id, analysed(100.0, "G", true));
+
+    lib.resetAnalysis(id);
+    const auto d = lib.derived(id).value();
+    CHECK_FALSE(d.bpm.has_value());
+    CHECK_FALSE(d.isLoop.has_value());
+    CHECK(d.key == "Dm");
+    CHECK(analysisVersion(db, id) == 0);
+    auto q = db.prepare("SELECT lufs, feature_vector FROM features WHERE file_id = ?");
+    q.bind(1, id);
+    REQUIRE(q.step());
+    CHECK(q.isNull(0));
+    CHECK(q.isNull(1));
+}
+
+TEST_CASE("setAnalysisError marks the file done with a reason", "[library]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto id = lib.insertFile(sampleRecord(lib.addRoot(dir.path()), "a.wav"));
+    lib.setAnalysisError(id, "cannot decode");
+    CHECK(analysisVersion(db, id) == kAnalysisVersion);
+    auto q = db.prepare("SELECT analysis_error FROM files WHERE id = ?");
+    q.bind(1, id);
+    REQUIRE(q.step());
+    CHECK(q.getText(0) == "cannot decode");
+}
+
+TEST_CASE("fileByAbsolutePath finds a file through its root", "[library]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto root = lib.addRoot(dir.path());
+    const auto id = lib.insertFile(sampleRecord(root, "Drums/Kick 01.wav"));
+    CHECK(lib.fileByAbsolutePath(dir.path() / "Drums" / "Kick 01.wav")->id == id);
+    CHECK_FALSE(lib.fileByAbsolutePath(dir.path() / "Drums" / "Nope.wav").has_value());
+    CHECK_FALSE(lib.fileByAbsolutePath(dir.path().parent_path() / "elsewhere.wav").has_value());
+}

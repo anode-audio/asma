@@ -49,6 +49,23 @@ TagSource sourceFromText(std::string_view s)
     return TagSource::Auto;
 }
 
+std::string_view featureSourceText(FeatureSource s)
+{
+    switch (s) {
+    case FeatureSource::Embedded: return "embedded";
+    case FeatureSource::Filename: return "filename";
+    case FeatureSource::Analysis: return "analysis";
+    }
+    return "filename";
+}
+
+FeatureSource featureSourceFromText(std::string_view s)
+{
+    if (s == "embedded") return FeatureSource::Embedded;
+    if (s == "analysis") return FeatureSource::Analysis;
+    return FeatureSource::Filename;
+}
+
 std::string lower(std::string_view s)
 {
     std::string out(s);
@@ -167,6 +184,20 @@ std::optional<FileRecord> Library::fileByPath(std::int64_t rootId, std::string_v
     return readFile(q);
 }
 
+std::optional<FileRecord> Library::fileByAbsolutePath(const fs::path& path)
+{
+    std::error_code ec;
+    fs::path canonical = fs::weakly_canonical(fs::absolute(path), ec);
+    if (ec) canonical = fs::absolute(path);
+    const std::string full = toUtf8(canonical);
+    for (const auto& r : roots()) {
+        const std::string prefix = r.path.back() == '/' ? r.path : r.path + "/";
+        if (full.size() > prefix.size() && full.compare(0, prefix.size(), prefix) == 0)
+            if (auto file = fileByPath(r.id, std::string_view(full).substr(prefix.size()))) return file;
+    }
+    return std::nullopt;
+}
+
 std::vector<FileRecord> Library::relinkCandidates(std::string_view contentHash, std::int64_t size)
 {
     auto q = db_.prepare("SELECT " + std::string(kFileColumns)
@@ -210,29 +241,63 @@ void Library::setStatus(std::int64_t fileId, FileStatus status, std::string_view
 
 void Library::resetAnalysis(std::int64_t fileId)
 {
-    auto q = db_.prepare("UPDATE files SET analysis_version = 0 WHERE id = ?");
-    q.bind(1, fileId);
-    q.run();
+    auto file = db_.prepare("UPDATE files SET analysis_version = 0, analysis_error = NULL WHERE id = ?");
+    file.bind(1, fileId);
+    file.run();
+    auto features = db_.prepare(
+        "UPDATE features SET "
+        "bpm = CASE WHEN bpm_source = 'analysis' THEN NULL ELSE bpm END, "
+        "bpm_confidence = CASE WHEN bpm_source = 'analysis' THEN NULL ELSE bpm_confidence END, "
+        "bpm_source = CASE WHEN bpm_source = 'analysis' THEN NULL ELSE bpm_source END, "
+        "key = CASE WHEN key_source = 'analysis' THEN NULL ELSE key END, "
+        "key_confidence = CASE WHEN key_source = 'analysis' THEN NULL ELSE key_confidence END, "
+        "key_source = CASE WHEN key_source = 'analysis' THEN NULL ELSE key_source END, "
+        "is_loop = CASE WHEN loop_source = 'analysis' THEN NULL ELSE is_loop END, "
+        "loop_source = CASE WHEN loop_source = 'analysis' THEN NULL ELSE loop_source END, "
+        "peak = NULL, lufs = NULL, centroid = NULL, rolloff = NULL, flatness = NULL, onset_density = NULL, "
+        "feature_vector = NULL WHERE file_id = ?");
+    features.bind(1, fileId);
+    features.run();
 }
 
 void Library::setDerived(std::int64_t fileId, const DerivedInfo& info)
 {
+    // Each value is replaced unless the new info has none and the stored one
+    // came from analysis: a moved file keeps what analysis found.
     auto features = db_.prepare(
-        "INSERT INTO features(file_id, bpm, bpm_confidence, key, key_confidence, is_loop, root_note) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(file_id) DO UPDATE SET bpm = excluded.bpm, bpm_confidence = excluded.bpm_confidence, "
-        "key = excluded.key, key_confidence = excluded.key_confidence, is_loop = excluded.is_loop, "
+        "INSERT INTO features(file_id, bpm, bpm_confidence, bpm_source, key, key_confidence, key_source, "
+        "is_loop, loop_source, root_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(file_id) DO UPDATE SET "
+        "bpm = CASE WHEN excluded.bpm IS NOT NULL OR features.bpm_source IS NOT 'analysis' "
+        "  THEN excluded.bpm ELSE features.bpm END, "
+        "bpm_confidence = CASE WHEN excluded.bpm IS NOT NULL OR features.bpm_source IS NOT 'analysis' "
+        "  THEN excluded.bpm_confidence ELSE features.bpm_confidence END, "
+        "bpm_source = CASE WHEN excluded.bpm IS NOT NULL OR features.bpm_source IS NOT 'analysis' "
+        "  THEN excluded.bpm_source ELSE features.bpm_source END, "
+        "key = CASE WHEN excluded.key IS NOT NULL OR features.key_source IS NOT 'analysis' "
+        "  THEN excluded.key ELSE features.key END, "
+        "key_confidence = CASE WHEN excluded.key IS NOT NULL OR features.key_source IS NOT 'analysis' "
+        "  THEN excluded.key_confidence ELSE features.key_confidence END, "
+        "key_source = CASE WHEN excluded.key IS NOT NULL OR features.key_source IS NOT 'analysis' "
+        "  THEN excluded.key_source ELSE features.key_source END, "
+        "is_loop = CASE WHEN excluded.is_loop IS NOT NULL OR features.loop_source IS NOT 'analysis' "
+        "  THEN excluded.is_loop ELSE features.is_loop END, "
+        "loop_source = CASE WHEN excluded.is_loop IS NOT NULL OR features.loop_source IS NOT 'analysis' "
+        "  THEN excluded.loop_source ELSE features.loop_source END, "
         "root_note = excluded.root_note");
     features.bind(1, fileId);
     features.bindOptional(2, info.bpm);
-    if (info.bpm) features.bind(3, info.bpmConfidence);
-    else features.bindNull(3);
-    if (info.key) features.bind(4, std::string_view(*info.key));
-    else features.bindNull(4);
-    if (info.key) features.bind(5, info.keyConfidence);
-    else features.bindNull(5);
-    features.bindOptional(6, info.isLoop);
-    features.bindOptional(7, info.rootNote);
+    if (info.bpm) features.bind(3, info.bpmConfidence).bind(4, featureSourceText(info.bpmSource));
+    else features.bindNull(3).bindNull(4);
+    if (info.key) {
+        features.bind(5, std::string_view(*info.key)).bind(6, info.keyConfidence).bind(7, featureSourceText(info.keySource));
+    } else {
+        features.bindNull(5).bindNull(6).bindNull(7);
+    }
+    features.bindOptional(8, info.isLoop);
+    if (info.isLoop) features.bind(9, featureSourceText(info.loopSource));
+    else features.bindNull(9);
+    features.bindOptional(10, info.rootNote);
     features.run();
 
     auto clear = db_.prepare("DELETE FROM file_tags WHERE file_id = ? AND source IN ('auto', 'embedded')");
@@ -250,22 +315,74 @@ void Library::setDerived(std::int64_t fileId, const DerivedInfo& info)
 
 std::optional<DerivedInfo> Library::derived(std::int64_t fileId)
 {
-    auto q = db_.prepare("SELECT bpm, bpm_confidence, key, key_confidence, is_loop, root_note "
-                         "FROM features WHERE file_id = ?");
+    auto q = db_.prepare("SELECT bpm, bpm_confidence, bpm_source, key, key_confidence, key_source, is_loop, "
+                         "loop_source, root_note FROM features WHERE file_id = ?");
     q.bind(1, fileId);
     if (!q.step()) return std::nullopt;
     DerivedInfo d;
     if (!q.isNull(0)) {
         d.bpm = q.getDouble(0);
         d.bpmConfidence = q.getDouble(1);
+        d.bpmSource = featureSourceFromText(q.getText(2));
     }
-    if (!q.isNull(2)) {
-        d.key = q.getText(2);
-        d.keyConfidence = q.getDouble(3);
+    if (!q.isNull(3)) {
+        d.key = q.getText(3);
+        d.keyConfidence = q.getDouble(4);
+        d.keySource = featureSourceFromText(q.getText(5));
     }
-    if (!q.isNull(4)) d.isLoop = q.getInt(4) != 0;
-    if (!q.isNull(5)) d.rootNote = static_cast<int>(q.getInt(5));
+    if (!q.isNull(6)) {
+        d.isLoop = q.getInt(6) != 0;
+        d.loopSource = featureSourceFromText(q.getText(7));
+    }
+    if (!q.isNull(8)) d.rootNote = static_cast<int>(q.getInt(8));
     return d;
+}
+
+void Library::setAnalysis(std::int64_t fileId, const AnalysisResult& r)
+{
+    auto ensure = db_.prepare("INSERT INTO features(file_id) VALUES (?) ON CONFLICT(file_id) DO NOTHING");
+    ensure.bind(1, fileId);
+    ensure.run();
+
+    // ?8..?12 are the analysed BPM, key and loop flag; they only land where
+    // nothing better (embedded, file name) is stored.
+    auto q = db_.prepare(
+        "UPDATE features SET peak = ?1, lufs = ?2, centroid = ?3, rolloff = ?4, flatness = ?5, "
+        "onset_density = ?6, feature_vector = ?7, "
+        "bpm = CASE WHEN bpm_source IS NULL OR bpm_source = 'analysis' THEN ?8 ELSE bpm END, "
+        "bpm_confidence = CASE WHEN bpm_source IS NULL OR bpm_source = 'analysis' THEN ?9 ELSE bpm_confidence END, "
+        "bpm_source = CASE WHEN bpm_source IS NULL OR bpm_source = 'analysis' "
+        "  THEN CASE WHEN ?8 IS NULL THEN NULL ELSE 'analysis' END ELSE bpm_source END, "
+        "key = CASE WHEN key_source IS NULL OR key_source = 'analysis' THEN ?10 ELSE key END, "
+        "key_confidence = CASE WHEN key_source IS NULL OR key_source = 'analysis' THEN ?11 ELSE key_confidence END, "
+        "key_source = CASE WHEN key_source IS NULL OR key_source = 'analysis' "
+        "  THEN CASE WHEN ?10 IS NULL THEN NULL ELSE 'analysis' END ELSE key_source END, "
+        "is_loop = CASE WHEN loop_source IS NULL OR loop_source = 'analysis' THEN ?12 ELSE is_loop END, "
+        "loop_source = CASE WHEN loop_source IS NULL OR loop_source = 'analysis' "
+        "  THEN CASE WHEN ?12 IS NULL THEN NULL ELSE 'analysis' END ELSE loop_source END "
+        "WHERE file_id = ?13");
+    q.bind(1, r.loudness.peak).bind(2, r.loudness.lufs).bind(3, r.centroid).bind(4, r.rolloff);
+    q.bind(5, r.flatness).bind(6, r.onsetDensity);
+    q.bindBlob(7, r.featureVector.data(), r.featureVector.size() * sizeof(float));
+    q.bindOptional(8, r.bpm);
+    if (r.bpm) q.bind(9, r.bpmConfidence);
+    else q.bindNull(9);
+    if (r.key) q.bind(10, std::string_view(*r.key)).bind(11, r.keyConfidence);
+    else q.bindNull(10).bindNull(11);
+    q.bindOptional(12, r.isLoop);
+    q.bind(13, fileId);
+    q.run();
+
+    auto file = db_.prepare("UPDATE files SET analysis_version = ?, analysis_error = NULL WHERE id = ?");
+    file.bind(1, kAnalysisVersion).bind(2, fileId);
+    file.run();
+}
+
+void Library::setAnalysisError(std::int64_t fileId, std::string_view reason)
+{
+    auto q = db_.prepare("UPDATE files SET analysis_version = ?, analysis_error = ? WHERE id = ?");
+    q.bind(1, kAnalysisVersion).bind(2, reason).bind(3, fileId);
+    q.run();
 }
 
 void Library::addUserTag(std::int64_t fileId, std::string_view tag)

@@ -111,3 +111,35 @@ TEST_CASE("Bad SQL throws DbError with SQLite's message", "[db]")
     CHECK_THROWS_AS(db.exec("SELEKT 1"), asma::DbError);
     CHECK_THROWS_AS(db.prepare("SELECT * FROM nope"), asma::DbError);
 }
+
+TEST_CASE("Blobs round-trip", "[db]")
+{
+    Db db = Db::openInMemory();
+    const std::vector<unsigned char> bytes = {0, 1, 2, 250, 255};
+    auto q = db.prepare("SELECT ?");
+    q.bindBlob(1, bytes.data(), bytes.size());
+    REQUIRE(q.step());
+    CHECK(q.getBlob(0) == bytes);
+}
+
+TEST_CASE("Migration 2 labels where version 1 values came from", "[db]")
+{
+    Db db = Db::openInMemory(1);
+    CHECK(db.schemaVersion() == 1);
+    db.exec("INSERT INTO roots(id, path) VALUES (1, '/r')");
+    db.exec("INSERT INTO files(id, root_id, rel_path, name, size, mtime, format, status) VALUES "
+            "(1, 1, 'a.wav', 'a.wav', 1, 1, 'wav', 'ok'), (2, 1, 'b.wav', 'b.wav', 1, 1, 'wav', 'ok')");
+    db.exec("INSERT INTO features(file_id, bpm, bpm_confidence, key, key_confidence, is_loop) VALUES "
+            "(1, 128, 1.0, NULL, NULL, 1), (2, 90, 0.9, 'Am', 0.9, NULL)");
+    asma::migrate(db);
+    CHECK(db.schemaVersion() == asma::currentSchemaVersion());
+    auto q = db.prepare("SELECT bpm_source, key_source, loop_source FROM features ORDER BY file_id");
+    REQUIRE(q.step());
+    CHECK(q.getText(0) == "embedded");
+    CHECK(q.isNull(1));
+    CHECK(q.getText(2) == "filename");
+    REQUIRE(q.step());
+    CHECK(q.getText(0) == "filename");
+    CHECK(q.getText(1) == "filename");
+    CHECK(q.isNull(2));
+}
