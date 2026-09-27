@@ -7,6 +7,7 @@
 #include "asma/core/InstrumentTags.h"
 #include "asma/core/Library.h"
 #include "asma/core/NameParse.h"
+#include "Parallel.h"
 
 #include <algorithm>
 #include <atomic>
@@ -277,8 +278,7 @@ ScanStats scanRoot(Db& db, std::int64_t rootId, const ScanOptions& options)
         tx.commit();
     }
 
-    const unsigned hardware = std::max(1u, std::thread::hardware_concurrency());
-    const unsigned threads = options.threads ? options.threads : hardware;
+    const unsigned threads = detail::threadCount(options.threads);
     const std::size_t batchSize = std::max<std::size_t>(1, options.batchSize);
     const std::size_t total = jobs.size();
     std::mutex callbackMutex;
@@ -287,28 +287,16 @@ ScanStats scanRoot(Db& db, std::int64_t rootId, const ScanOptions& options)
     for (std::size_t start = 0; start < total; start += batchSize) {
         const std::size_t end = std::min(total, start + batchSize);
         std::vector<JobResult> results(end - start);
-        std::atomic<std::size_t> next{start};
-
-        auto worker = [&] {
-            for (;;) {
-                const std::size_t i = next.fetch_add(1);
-                if (i >= end) return;
-                if (options.onFileStart) {
-                    std::lock_guard lock(callbackMutex);
-                    options.onFileStart(jobs[i].disk.relPath);
-                }
-                results[i - start] = process(rootPath, jobs[i]);
+        detail::parallelFor(start, end, threads, [&](std::size_t i) {
+            if (options.onFileStart) {
                 std::lock_guard lock(callbackMutex);
-                ++done;
-                if (options.onProgress) options.onProgress(done, total, jobs[i].disk.relPath);
+                options.onFileStart(jobs[i].disk.relPath);
             }
-        };
-
-        const auto poolSize = static_cast<unsigned>(std::min<std::size_t>(threads, end - start));
-        std::vector<std::thread> pool;
-        for (unsigned t = 1; t < poolSize; ++t) pool.emplace_back(worker);
-        worker();
-        for (auto& thread : pool) thread.join();
+            results[i - start] = process(rootPath, jobs[i]);
+            std::lock_guard lock(callbackMutex);
+            ++done;
+            if (options.onProgress) options.onProgress(done, total, jobs[i].disk.relPath);
+        });
 
         Transaction tx(db);
         for (std::size_t i = start; i < end; ++i) apply(lib, rootId, jobs[i], results[i - start], stats, gone);
