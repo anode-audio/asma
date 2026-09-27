@@ -21,11 +21,14 @@ std::vector<SimilarMatch> findSimilar(Db& db, std::int64_t fileId, int limit)
         const auto blob = q.getBlob(1);
         if (blob.size() != kFeatureVectorSize * sizeof(float)) continue; // written by another analyser version
         std::vector<double> v(kFeatureVectorSize);
+        bool finite = true;
         for (std::size_t d = 0; d < kFeatureVectorSize; ++d) {
             float x = 0.0f;
             std::memcpy(&x, blob.data() + d * sizeof(float), sizeof(float));
+            finite = finite && std::isfinite(x);
             v[d] = x;
         }
+        if (!finite) continue; // one corrupt row would skew the z-scores for everyone
         if (q.getInt(0) == fileId) target = ids.size();
         ids.push_back(q.getInt(0));
         vectors.push_back(std::move(v));

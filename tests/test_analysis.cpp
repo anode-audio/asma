@@ -5,6 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <limits>
 
 using namespace asma;
 
@@ -123,4 +124,22 @@ TEST_CASE("Other sample rates work", "[analysis]")
     const AnalysisResult r = analyse(audio(test::drumLoop(120.0, 2, 96000), 96000));
     REQUIRE(r.bpm.has_value());
     CHECK(*r.bpm == Catch::Approx(120.0).margin(0.01));
+}
+
+TEST_CASE("Hostile samples never produce NaN or inf results", "[analysis]")
+{
+    std::vector<float> mono = test::drumLoop(120.0, 2, kRate);
+    mono[1000] = std::numeric_limits<float>::quiet_NaN();
+    mono[2000] = std::numeric_limits<float>::infinity();
+    mono[3000] = 3e38f;
+    const AnalysisResult r = analyse(audio(mono));
+    REQUIRE(r.featureVector.size() == kFeatureVectorSize);
+    for (float v : r.featureVector) CHECK(std::isfinite(v));
+    CHECK(std::isfinite(r.loudness.peak));
+    CHECK(std::isfinite(r.loudness.lufs));
+    CHECK(std::isfinite(r.centroid));
+    CHECK(std::isfinite(r.flatness));
+
+    const AnalysisResult tiny = analyse(audio(std::vector<float>(10, 0.1f)));
+    for (float v : tiny.featureVector) CHECK(std::isfinite(v));
 }

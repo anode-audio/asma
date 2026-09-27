@@ -579,6 +579,17 @@ AnalysisResult analyse(const DecodedAudio& audio)
     r.featureVector.push_back(static_cast<float>(r.flatness));
     r.featureVector.push_back(static_cast<float>(std::log1p(r.onsetDensity)));
     r.featureVector.push_back(static_cast<float>(std::log(seconds + 0.01)));
+    // Last line of defence: nothing non-finite reaches the database.
+    auto finite = [](double v) { return std::isfinite(v) ? v : 0.0; };
+    for (float& v : r.featureVector)
+        if (!std::isfinite(v)) v = 0.0f;
+    r.loudness.peak = finite(r.loudness.peak);
+    r.loudness.lufs = std::isfinite(r.loudness.lufs) ? r.loudness.lufs : -70.0;
+    r.centroid = finite(r.centroid);
+    r.rolloff = finite(r.rolloff);
+    r.flatness = finite(r.flatness);
+    r.onsetDensity = finite(r.onsetDensity);
+    if (r.bpm && !std::isfinite(*r.bpm)) r.bpm.reset();
     return r;
 }
 

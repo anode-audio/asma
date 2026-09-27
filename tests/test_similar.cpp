@@ -6,6 +6,7 @@
 #include "asma/core/Similar.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
 
 using namespace asma;
 using asma::test::TempDir;
@@ -87,4 +88,31 @@ TEST_CASE("missing files are not suggested", "[similar]")
     addAnalysed(lib, root, "hat.wav", test::hatHit(kRate, 1));
     lib.setStatus(gone, FileStatus::Missing);
     for (const auto& m : findSimilar(db, kick)) CHECK(m.id != gone);
+}
+
+TEST_CASE("a corrupt stored vector does not skew everyone else's matches", "[similar]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto root = lib.addRoot(dir.path());
+    const auto kick = addAnalysed(lib, root, "kick.wav", test::kickHit(kRate));
+    const auto kick2 = addAnalysed(lib, root, "kick2.wav", scaled(test::kickHit(kRate), 0.7f));
+    addAnalysed(lib, root, "hat.wav", test::hatHit(kRate, 1));
+    const auto before = findSimilar(db, kick, 2);
+
+    FileRecord f;
+    f.rootId = root;
+    f.relPath = "broken.wav";
+    f.format = "wav";
+    const auto broken = lib.insertFile(f);
+    AnalysisResult bad;
+    bad.featureVector.assign(kFeatureVectorSize, std::numeric_limits<float>::quiet_NaN());
+    lib.setAnalysis(broken, bad);
+
+    const auto after = findSimilar(db, kick, 2);
+    REQUIRE(after.size() == before.size());
+    CHECK(after[0].id == kick2);
+    CHECK(after[0].similarity == before[0].similarity);
+    for (const auto& m : after) CHECK(m.id != broken);
 }
