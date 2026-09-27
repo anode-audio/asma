@@ -262,6 +262,22 @@ void Library::resetAnalysis(std::int64_t fileId)
 
 void Library::setDerived(std::int64_t fileId, const DerivedInfo& info)
 {
+    // A value the name or the file used to state is going away (renamed, ACID
+    // chunk removed): analysis never filled it, so queue the file again.
+    auto sources = db_.prepare("SELECT bpm_source, key_source, loop_source FROM features WHERE file_id = ?");
+    sources.bind(1, fileId);
+    if (sources.step()) {
+        auto stated = [&](int column) {
+            const std::string s = sources.getText(column);
+            return s == "filename" || s == "embedded";
+        };
+        if ((stated(0) && !info.bpm) || (stated(1) && !info.key) || (stated(2) && !info.isLoop)) {
+            auto requeue = db_.prepare("UPDATE files SET analysis_version = 0, analysis_error = NULL WHERE id = ?");
+            requeue.bind(1, fileId);
+            requeue.run();
+        }
+    }
+
     // Each value is replaced unless the new info has none and the stored one
     // came from analysis: a moved file keeps what analysis found.
     auto features = db_.prepare(

@@ -164,3 +164,21 @@ TEST_CASE("rootId limits the run and callbacks cover every file", "[analyser]")
     CHECK(lastTotal == 1);
     CHECK(f.version("a.wav") == 0);
 }
+
+TEST_CASE("renaming away a file-name BPM hands the file back to analysis", "[analyser]")
+{
+    Fixture f;
+    f.write("Groove_90bpm.wav", test::drumLoop(128.0, 2, kRate));
+    scanRoot(f.db, f.rootId);
+    analysePending(f.db);
+    REQUIRE(f.lib.derived(f.file("Groove_90bpm.wav").id)->bpm == 90.0);
+
+    fs::rename(f.root / "Groove_90bpm.wav", f.root / "Groove.wav");
+    scanRoot(f.db, f.rootId);
+    CHECK(analysePending(f.db).analysed == 1);
+    const auto d = f.lib.derived(f.file("Groove.wav").id).value();
+    REQUIRE(d.bpm.has_value());
+    CHECK(*d.bpm == Catch::Approx(128.0).margin(0.01));
+    CHECK(d.bpmSource == FeatureSource::Analysis);
+    CHECK(d.isLoop == true);
+}
