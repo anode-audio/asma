@@ -58,9 +58,9 @@ the repo; `[.real]` (Task 10) reproduces the measurement on any folder.
 
 | measure                                           | result                                        |
 | ------------------------------------------------- | --------------------------------------------- |
-| loop tempo, 240 labelled loops                    | 67% exact, 14% octave off, 3% wrong, 16% none |
+| loop tempo, all 287 labelled loops                | 52% exact, 23% octave off, 4% wrong, 22% none |
 | loop or one-shot, 451 labelled one-shots          | 7% called loops                               |
-| key, 2,401 labelled files                         | reported for 76%; 69% of those right          |
+| key, 6,776 labelled files                         | reported for 76%; 69% of those right          |
 | full scan + analysis, 70,539 files (M-series Mac) | 3 min 32 s; 12 decode failures                |
 
 The 12 failures are AIFC files with the `twos` compression tag (16-bit
