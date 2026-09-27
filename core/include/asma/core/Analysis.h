@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <optional>
 #include <vector>
 
 namespace asma {
@@ -10,6 +11,15 @@ struct Loudness {
     double lufs = -70.0; // integrated; ungated over the whole sound under 400 ms; floor -70
 };
 
+struct TempoEstimate {
+    double bpm = 0.0;
+    double confidence = 0.0; // 0..1
+};
+
 Loudness measureLoudness(const std::vector<float>& mono, int sampleRate);
+// Free estimate for rhythmic material of unknown length. nullopt for sounds
+// under one second or without onsets. Confidence is the normalised
+// autocorrelation at the beat; below ~0.4 the tempo is a guess.
+std::optional<TempoEstimate> estimateTempo(const std::vector<float>& mono, int sampleRate);
 
 } // namespace asma
