@@ -246,4 +246,93 @@ std::optional<TempoEstimate> estimateTempo(const std::vector<float>& mono, int s
     return tempoFromOnsets(onsetEnvelopes(mono, sampleRate));
 }
 
+// ---- Key
+
+std::optional<KeyEstimate> estimateKey(const std::vector<float>& mono, int sampleRate)
+{
+    if (sampleRate <= 0 || mono.size() < static_cast<std::size_t>(sampleRate / 4)) return std::nullopt;
+    const std::size_t size = detail::powerOfTwoAtLeast(sampleRate * 0.37); // ~2.7 Hz bins at 44.1 kHz
+    const auto frames = detail::stft(mono, size, size / 2);
+    const double binHz = static_cast<double>(sampleRate) / static_cast<double>(size);
+
+    std::vector<std::pair<std::size_t, int>> binClass; // bin -> pitch class, 100 Hz .. 5 kHz
+    for (std::size_t k = 1; k < size / 2 + 1; ++k) {
+        const double f = static_cast<double>(k) * binHz;
+        if (f < 100.0 || f > 5000.0) continue;
+        const long midi = std::lround(69.0 + 12.0 * std::log2(f / 440.0));
+        binClass.emplace_back(k, static_cast<int>(((midi % 12) + 12) % 12));
+    }
+    if (binClass.empty()) return std::nullopt;
+
+    std::array<double, 12> chroma{};
+    double flatnessSum = 0.0;
+    double weightSum = 0.0;
+    for (const auto& frame : frames) {
+        double total = 0.0;
+        double logSum = 0.0;
+        for (const auto& [k, pc] : binClass) {
+            const double p = static_cast<double>(frame[k]) * frame[k];
+            total += p;
+            logSum += std::log(p + 1e-12);
+            chroma[static_cast<std::size_t>(pc)] += frame[k];
+        }
+        if (total <= 0.0) continue;
+        const double mean = total / static_cast<double>(binClass.size());
+        flatnessSum += total * std::exp(logSum / static_cast<double>(binClass.size())) / (mean + 1e-12);
+        weightSum += total;
+    }
+    if (weightSum <= 0.0) return std::nullopt;
+    if (flatnessSum / weightSum > 0.3) return std::nullopt; // noise-like: no key
+
+    // Temperley-Kostka-Payne key profiles.
+    static constexpr std::array<double, 12> kMajor = {0.748, 0.060, 0.488, 0.082, 0.670, 0.460,
+                                                      0.096, 0.715, 0.104, 0.366, 0.057, 0.400};
+    static constexpr std::array<double, 12> kMinor = {0.712, 0.084, 0.474, 0.618, 0.049, 0.460,
+                                                      0.105, 0.747, 0.404, 0.067, 0.133, 0.330};
+    static constexpr std::array<const char*, 12> kNames = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+
+    auto correlate = [&](const std::array<double, 12>& profile, int tonic) {
+        double mx = 0.0;
+        double my = 0.0;
+        for (int i = 0; i < 12; ++i) {
+            mx += chroma[static_cast<std::size_t>(i)];
+            my += profile[static_cast<std::size_t>((i - tonic + 12) % 12)];
+        }
+        mx /= 12.0;
+        my /= 12.0;
+        double sxy = 0.0;
+        double sxx = 0.0;
+        double syy = 0.0;
+        for (int i = 0; i < 12; ++i) {
+            const double x = chroma[static_cast<std::size_t>(i)] - mx;
+            const double y = profile[static_cast<std::size_t>((i - tonic + 12) % 12)] - my;
+            sxy += x * y;
+            sxx += x * x;
+            syy += y * y;
+        }
+        return sxx > 0.0 ? sxy / std::sqrt(sxx * syy) : 0.0;
+    };
+
+    double best = -2.0;
+    double second = -2.0;
+    std::string bestKey;
+    for (int tonic = 0; tonic < 12; ++tonic) {
+        for (bool minor : {false, true}) {
+            const double r = correlate(minor ? kMinor : kMajor, tonic);
+            if (r > best) {
+                second = best;
+                best = r;
+                bestKey = std::string(kNames[static_cast<std::size_t>(tonic)]) + (minor ? "m" : "");
+            } else if (r > second) {
+                second = r;
+            }
+        }
+    }
+    if (best < 0.5) return std::nullopt;
+    KeyEstimate estimate;
+    estimate.key = bestKey;
+    estimate.confidence = std::clamp((best - second) / 0.2, 0.0, 1.0) * std::clamp(best, 0.0, 1.0);
+    return estimate;
+}
+
 } // namespace asma
