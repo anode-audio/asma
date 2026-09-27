@@ -209,8 +209,9 @@ All in-house, kept small and deterministic:
 - **Loop vs one-shot:** duration, onset pattern regularity, and whether the
   length fits a whole number of bars at the estimated tempo.
 - **BPM:** onset-strength envelope plus autocorrelation, with octave-error
-  correction; confidence from peak prominence. Embedded ACID tempo and filename
-  BPM override when present.
+  correction; confidence from peak prominence. For a complete file, only the
+  tempos that fit a whole number of bars are considered. Embedded ACID tempo
+  and filename BPM override when present.
 - **Key:** chroma profile correlated against major/minor key templates;
   confidence from the margin between best and second-best key. Only reported for
   tonal material (low spectral flatness).
@@ -312,10 +313,12 @@ core, the CLI and the scanner build without JUCE.
 - **Unit tests (`asma-core`):** scan diffing (new, changed, moved, missing),
   query-to-SQL translation, migrations, and journal recovery with a simulated
   crash injected at every step of plan, journal, execute.
-- **Analysis accuracy corpus:** generated fixtures (click tracks at known BPMs,
-  tones and chords in known keys, one-shots vs loops) plus a small CC0 set,
-  checked into the repo with expected results. CI fails if BPM or key accuracy
-  drops below the recorded baseline.
+- **Analysis accuracy corpus:** generated fixtures (drum loops at known BPMs,
+  chord progressions in known keys, loops vs one-shots), built at test time so
+  no third-party audio is stored. CI fails if BPM or key accuracy drops below
+  the recorded baseline. Real-world accuracy is measured by an opt-in test
+  against the BPM and key a user's own library already states in file names
+  and ACID chunks; nothing from that library is copied or uploaded.
 - **CLI end to end:** `asma scan` and `asma query` over a fixture tree,
   asserting results.
 - **Plugin validation:** pluginval (VST3, AU) and clap-validator (CLAP).

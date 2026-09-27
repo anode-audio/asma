@@ -13,7 +13,7 @@ jobs:
         os: [macos-14, windows-2022, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: lukka/get-cmake@latest
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
@@ -23,3 +23,14 @@ jobs:
         run: cmake --build build
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Performance (informational)
+        continue-on-error: true
+        shell: bash
+        run: |
+          ./build/tests/asma_tests "[.perf]" > perf.txt 2>&1 || true
+          {
+            echo "### Performance on ${{ matrix.os }}"
+            echo '```'
+            grep -E "took" perf.txt || cat perf.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
