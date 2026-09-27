@@ -58,4 +58,8 @@ std::string ftsMatchExpression(std::string_view text);
 SqlQuery buildSearchSql(const SearchModel& model);
 std::vector<SearchRow> search(Db& db, const SearchModel& model);
 
+// Rows for these file ids, in the given order. Ids that are unknown, not ok
+// or in a disabled root are left out.
+std::vector<SearchRow> rowsForIds(Db& db, const std::vector<std::int64_t>& ids);
+
 } // namespace asma

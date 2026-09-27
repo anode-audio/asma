@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "asma/core/Query.h"
 
+#include <algorithm>
 #include <cctype>
 #include <type_traits>
 
@@ -19,6 +20,27 @@ std::string lower(std::string_view s)
     std::string out(s);
     for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return out;
+}
+
+constexpr std::string_view kRowSelect =
+    "SELECT f.id, r.path, f.rel_path, f.name, f.format, f.duration, ft.bpm, ft.key, ft.is_loop "
+    "FROM files f JOIN roots r ON r.id = f.root_id "
+    "LEFT JOIN features ft ON ft.file_id = f.id "
+    "WHERE f.status = 'ok' AND r.enabled = 1";
+
+SearchRow readRow(const Statement& s)
+{
+    SearchRow r;
+    r.id = s.getInt(0);
+    r.rootPath = s.getText(1);
+    r.relPath = s.getText(2);
+    r.name = s.getText(3);
+    r.format = s.getText(4);
+    r.duration = s.getDouble(5);
+    if (!s.isNull(6)) r.bpm = s.getDouble(6);
+    if (!s.isNull(7)) r.key = s.getText(7);
+    if (!s.isNull(8)) r.isLoop = s.getInt(8) != 0;
+    return r;
 }
 
 std::string placeholders(std::size_t count)
@@ -51,10 +73,7 @@ std::string ftsMatchExpression(std::string_view text)
 SqlQuery buildSearchSql(const SearchModel& m)
 {
     SqlQuery q;
-    q.sql = "SELECT f.id, r.path, f.rel_path, f.name, f.format, f.duration, ft.bpm, ft.key, ft.is_loop "
-            "FROM files f JOIN roots r ON r.id = f.root_id "
-            "LEFT JOIN features ft ON ft.file_id = f.id "
-            "WHERE f.status = 'ok' AND r.enabled = 1";
+    q.sql = std::string(kRowSelect);
 
     if (const std::string match = ftsMatchExpression(m.text); !match.empty()) {
         q.sql += " AND f.id IN (SELECT rowid FROM fts_files WHERE fts_files MATCH ?)";
@@ -123,18 +142,21 @@ std::vector<SearchRow> search(Db& db, const SearchModel& model)
     }
 
     std::vector<SearchRow> rows;
-    while (s.step()) {
-        SearchRow r;
-        r.id = s.getInt(0);
-        r.rootPath = s.getText(1);
-        r.relPath = s.getText(2);
-        r.name = s.getText(3);
-        r.format = s.getText(4);
-        r.duration = s.getDouble(5);
-        if (!s.isNull(6)) r.bpm = s.getDouble(6);
-        if (!s.isNull(7)) r.key = s.getText(7);
-        if (!s.isNull(8)) r.isLoop = s.getInt(8) != 0;
-        rows.push_back(std::move(r));
+    while (s.step()) rows.push_back(readRow(s));
+    return rows;
+}
+
+std::vector<SearchRow> rowsForIds(Db& db, const std::vector<std::int64_t>& ids)
+{
+    std::vector<SearchRow> rows;
+    if (ids.empty()) return rows;
+    Statement s = db.prepare(std::string(kRowSelect) + " AND f.id IN (" + placeholders(ids.size()) + ")");
+    for (std::size_t i = 0; i < ids.size(); ++i) s.bind(static_cast<int>(i) + 1, ids[i]);
+    std::vector<SearchRow> found;
+    while (s.step()) found.push_back(readRow(s));
+    for (const auto id : ids) {
+        const auto it = std::find_if(found.begin(), found.end(), [&](const SearchRow& r) { return r.id == id; });
+        if (it != found.end()) rows.push_back(*it);
     }
     return rows;
 }

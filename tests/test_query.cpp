@@ -218,3 +218,11 @@ TEST_CASE("search over 200k files", "[.perf]")
     WARN("search took " << ms << " ms for " << rows.size() << " rows");
     CHECK(ms < 50.0);
 }
+
+TEST_CASE("rowsForIds keeps the given order and drops unusable ids", "[query]")
+{
+    Seeded s;
+    s.lib.setStatus(s.snare, FileStatus::Missing);
+    CHECK(ids(rowsForIds(s.db, {s.padLoop, s.snare, 9999, s.kick})) == Ids{s.padLoop, s.kick});
+    CHECK(rowsForIds(s.db, {}).empty());
+}
