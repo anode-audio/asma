@@ -63,6 +63,15 @@ std::string ftsMatchExpression(std::string_view text);
 SqlQuery buildSearchSql(const SearchModel& model);
 std::vector<SearchRow> search(Db& db, const SearchModel& model);
 
+// The model as one JSON object, for saved searches and plugin state. Paging
+// (limit, offset) is view state and is left out; so are default values.
+std::string searchModelToJson(const SearchModel& model);
+
+// Reads what searchModelToJson wrote, possibly by another asma version:
+// unknown fields are ignored, and so are fields with the wrong type or an
+// out-of-range value. Nothing when the text is not a JSON object.
+std::optional<SearchModel> searchModelFromJson(std::string_view json);
+
 // Rows for these file ids, in the given order. Ids that are unknown, not ok
 // or in a disabled root are left out.
 std::vector<SearchRow> rowsForIds(Db& db, const std::vector<std::int64_t>& ids);

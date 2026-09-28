@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "asma/core/Query.h"
 
+#include "asma/core/Json.h"
+#include "asma/core/NameParse.h"
+
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <utility>
 #include <type_traits>
 
 namespace asma {
@@ -173,6 +178,95 @@ std::vector<SearchRow> rowsForIds(Db& db, const std::vector<std::int64_t>& ids)
         if (it != found.end()) rows.push_back(*it);
     }
     return rows;
+}
+
+namespace {
+
+constexpr std::pair<SortField, std::string_view> kSortNames[] = {
+    {SortField::Name, "name"}, {SortField::Bpm, "bpm"},       {SortField::Duration, "duration"},
+    {SortField::Key, "key"},   {SortField::Rating, "rating"},
+};
+
+std::vector<std::string> stringArray(const JsonValue* value)
+{
+    std::vector<std::string> out;
+    if (!value || !value->asArray()) return out;
+    for (const auto& item : *value->asArray())
+        if (const auto* text = item.asString()) out.push_back(*text);
+    return out;
+}
+
+std::optional<double> finiteNumber(const JsonValue* value)
+{
+    if (!value) return std::nullopt;
+    const auto number = value->asNumber();
+    if (!number || !std::isfinite(*number)) return std::nullopt;
+    return number;
+}
+
+} // namespace
+
+std::string searchModelToJson(const SearchModel& m)
+{
+    JsonLine j;
+    j.num("v", 1);
+    if (!m.text.empty()) j.str("text", m.text);
+    if (m.type == SampleType::Loop) j.str("type", "loop");
+    if (m.type == SampleType::OneShot) j.str("type", "oneshot");
+    if (m.bpmMin) j.real("bpm_min", *m.bpmMin);
+    if (m.bpmMax) j.real("bpm_max", *m.bpmMax);
+    if (!m.keys.empty()) j.strings("keys", m.keys);
+    if (!m.tags.empty()) j.strings("tags", m.tags);
+    if (m.durationMin) j.real("duration_min", *m.durationMin);
+    if (m.durationMax) j.real("duration_max", *m.durationMax);
+    if (!m.formats.empty()) j.strings("formats", m.formats);
+    if (m.rootId) j.num("root", *m.rootId);
+    if (m.minRating) j.num("min_rating", *m.minRating);
+    if (m.favouritesOnly) j.boolean("favourites", true);
+    if (m.collectionId) j.num("collection", *m.collectionId);
+    if (m.sort != SortField::Name)
+        for (const auto& [field, name] : kSortNames)
+            if (field == m.sort) j.str("sort", name);
+    if (m.descending) j.boolean("desc", true);
+    return j.build();
+}
+
+std::optional<SearchModel> searchModelFromJson(std::string_view json)
+{
+    JsonValue doc;
+    try {
+        doc = parseJson(json);
+    } catch (const JsonError&) {
+        return std::nullopt;
+    }
+    if (!doc.isObject()) return std::nullopt;
+
+    SearchModel m;
+    if (const auto* v = doc.get("text"); v && v->asString()) m.text = *v->asString();
+    if (const auto* v = doc.get("type"); v && v->asString()) {
+        if (*v->asString() == "loop") m.type = SampleType::Loop;
+        if (*v->asString() == "oneshot") m.type = SampleType::OneShot;
+    }
+    m.bpmMin = finiteNumber(doc.get("bpm_min"));
+    m.bpmMax = finiteNumber(doc.get("bpm_max"));
+    // Keep only keys search can match, in canonical spelling.
+    for (const auto& key : stringArray(doc.get("keys")))
+        if (const auto canonical = parseKeyToken(key)) m.keys.push_back(*canonical);
+    m.tags = stringArray(doc.get("tags"));
+    m.durationMin = finiteNumber(doc.get("duration_min"));
+    m.durationMax = finiteNumber(doc.get("duration_max"));
+    m.formats = stringArray(doc.get("formats"));
+    if (const auto* v = doc.get("root")) m.rootId = v->asInt();
+    if (const auto* v = doc.get("min_rating"))
+        if (const auto rating = v->asInt(); rating && *rating >= 1 && *rating <= 5)
+            m.minRating = static_cast<int>(*rating);
+    if (const auto* v = doc.get("favourites")) m.favouritesOnly = v->asBool().value_or(false);
+    if (const auto* v = doc.get("collection")) m.collectionId = v->asInt();
+    if (const auto* v = doc.get("sort"); v && v->asString())
+        for (const auto& [field, name] : kSortNames)
+            if (name == *v->asString()) m.sort = field;
+    if (const auto* v = doc.get("desc")) m.descending = v->asBool().value_or(false);
+    return m;
 }
 
 } // namespace asma

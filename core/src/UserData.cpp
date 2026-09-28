@@ -33,10 +33,10 @@ void UserData::requireCollection(std::int64_t id)
     if (!q.step()) throw UserDataError("no collection with id " + std::to_string(id));
 }
 
-std::string UserData::validName(std::string_view name)
+std::string UserData::validName(std::string_view name, const char* what)
 {
     std::string trimmed = trim(name);
-    if (trimmed.empty()) throw UserDataError("a collection needs a name");
+    if (trimmed.empty()) throw UserDataError(std::string("a ") + what + " needs a name");
     return trimmed;
 }
 
@@ -82,7 +82,7 @@ bool UserData::isFavourite(std::int64_t fileId)
 
 std::int64_t UserData::createCollection(std::string_view name)
 {
-    const std::string valid = validName(name);
+    const std::string valid = validName(name, "collection");
     if (collectionByName(valid)) throw UserDataError("a collection called '" + valid + "' already exists");
     auto q = db_.prepare("INSERT INTO collections(name) VALUES (?)");
     q.bind(1, std::string_view(valid));
@@ -93,7 +93,7 @@ std::int64_t UserData::createCollection(std::string_view name)
 void UserData::renameCollection(std::int64_t id, std::string_view name)
 {
     requireCollection(id);
-    const std::string valid = validName(name);
+    const std::string valid = validName(name, "collection");
     if (const auto existing = collectionByName(valid); existing && existing->id != id)
         throw UserDataError("a collection called '" + valid + "' already exists");
     auto q = db_.prepare("UPDATE collections SET name = ? WHERE id = ?");
@@ -142,6 +142,45 @@ void UserData::removeFromCollection(std::int64_t collectionId, std::int64_t file
     requireCollection(collectionId);
     auto q = db_.prepare("DELETE FROM collection_items WHERE collection_id = ? AND file_id = ?");
     q.bind(1, collectionId).bind(2, fileId);
+    q.run();
+}
+
+std::int64_t UserData::saveSearch(std::string_view name, const SearchModel& model)
+{
+    const std::string valid = validName(name, "saved search");
+    const std::string json = searchModelToJson(model);
+    auto q = db_.prepare("INSERT INTO saved_searches(name, model) VALUES (?, ?) "
+                         "ON CONFLICT(name) DO UPDATE SET model = excluded.model RETURNING id");
+    q.bind(1, std::string_view(valid)).bind(2, std::string_view(json));
+    q.step();
+    return q.getInt(0);
+}
+
+std::vector<SavedSearch> UserData::savedSearches()
+{
+    std::vector<SavedSearch> out;
+    auto q = db_.prepare("SELECT id, name, model FROM saved_searches ORDER BY name COLLATE NOCASE, id");
+    while (q.step())
+        out.push_back({q.getInt(0), q.getText(1), searchModelFromJson(q.getText(2)).value_or(SearchModel{})});
+    return out;
+}
+
+std::optional<SavedSearch> UserData::savedSearchByName(std::string_view name)
+{
+    const std::string trimmed = trim(name);
+    auto q = db_.prepare("SELECT id, name, model FROM saved_searches WHERE name = ?");
+    q.bind(1, std::string_view(trimmed));
+    if (!q.step()) return std::nullopt;
+    return SavedSearch{q.getInt(0), q.getText(1), searchModelFromJson(q.getText(2)).value_or(SearchModel{})};
+}
+
+void UserData::deleteSavedSearch(std::int64_t id)
+{
+    auto exists = db_.prepare("SELECT 1 FROM saved_searches WHERE id = ?");
+    exists.bind(1, id);
+    if (!exists.step()) throw UserDataError("no saved search with id " + std::to_string(id));
+    auto q = db_.prepare("DELETE FROM saved_searches WHERE id = ?");
+    q.bind(1, id);
     q.run();
 }
 
