@@ -410,6 +410,16 @@ void Library::addUserTag(std::int64_t fileId, std::string_view tag)
     refreshFts(fileId);
 }
 
+void Library::removeUserTag(std::int64_t fileId, std::string_view tag)
+{
+    const std::string normalised = lower(tag);
+    auto q = db_.prepare("DELETE FROM file_tags WHERE file_id = ? AND source = 'user' "
+                         "AND tag_id = (SELECT id FROM tags WHERE name = ?)");
+    q.bind(1, fileId).bind(2, std::string_view(normalised));
+    q.run();
+    refreshFts(fileId);
+}
+
 std::vector<std::pair<std::string, TagSource>> Library::tags(std::int64_t fileId)
 {
     std::vector<std::pair<std::string, TagSource>> out;

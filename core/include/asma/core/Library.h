@@ -96,6 +96,9 @@ public:
     std::optional<DerivedInfo> derived(std::int64_t fileId); // tags left empty
 
     void addUserTag(std::int64_t fileId, std::string_view tag);
+    // Removes the tag only where the user added it; auto and embedded tags
+    // belong to the scanner and would come back on the next scan.
+    void removeUserTag(std::int64_t fileId, std::string_view tag);
     std::vector<std::pair<std::string, TagSource>> tags(std::int64_t fileId);
 
 private:

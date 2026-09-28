@@ -12,7 +12,7 @@ namespace asma {
 namespace {
 
 // Append-only. Never edit a migration that has shipped; add a new one.
-constexpr std::array<std::string_view, 2> kMigrations = {
+constexpr std::array<std::string_view, 3> kMigrations = {
     R"SQL(
 CREATE TABLE roots (
     id INTEGER PRIMARY KEY,
@@ -89,6 +89,36 @@ UPDATE features SET key_source = 'filename' WHERE key IS NOT NULL;
 UPDATE features SET loop_source = 'filename' WHERE is_loop IS NOT NULL;
 
 CREATE INDEX files_analysis_pending ON files(analysis_version) WHERE status = 'ok';
+)SQL",
+    R"SQL(
+CREATE TABLE ratings (
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5)
+);
+
+CREATE TABLE favourites (
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE
+);
+
+-- AUTOINCREMENT: saved searches refer to collections by id, so an id must
+-- never be handed to a new collection after its owner is deleted.
+CREATE TABLE collections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
+
+CREATE TABLE collection_items (
+    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    PRIMARY KEY (collection_id, file_id)
+);
+CREATE INDEX collection_items_file ON collection_items(file_id);
+
+CREATE TABLE saved_searches (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    model TEXT NOT NULL
+);
 )SQL",
 };
 
