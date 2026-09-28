@@ -23,9 +23,11 @@ std::string lower(std::string_view s)
 }
 
 constexpr std::string_view kRowSelect =
-    "SELECT f.id, r.path, f.rel_path, f.name, f.format, f.duration, ft.bpm, ft.key, ft.is_loop "
+    "SELECT f.id, r.path, f.rel_path, f.name, f.format, f.duration, ft.bpm, ft.key, ft.is_loop, rt.rating, "
+    "EXISTS (SELECT 1 FROM favourites fv WHERE fv.file_id = f.id) "
     "FROM files f JOIN roots r ON r.id = f.root_id "
     "LEFT JOIN features ft ON ft.file_id = f.id "
+    "LEFT JOIN ratings rt ON rt.file_id = f.id "
     "WHERE f.status = 'ok' AND r.enabled = 1";
 
 SearchRow readRow(const Statement& s)
@@ -40,6 +42,8 @@ SearchRow readRow(const Statement& s)
     if (!s.isNull(6)) r.bpm = s.getDouble(6);
     if (!s.isNull(7)) r.key = s.getText(7);
     if (!s.isNull(8)) r.isLoop = s.getInt(8) != 0;
+    if (!s.isNull(9)) r.rating = static_cast<int>(s.getInt(9));
+    r.favourite = s.getInt(10) != 0;
     return r;
 }
 
@@ -113,6 +117,15 @@ SqlQuery buildSearchSql(const SearchModel& m)
         q.sql += " AND f.root_id = ?";
         q.params.emplace_back(*m.rootId);
     }
+    if (m.minRating) {
+        q.sql += " AND rt.rating >= ?";
+        q.params.emplace_back(static_cast<std::int64_t>(*m.minRating));
+    }
+    if (m.favouritesOnly) q.sql += " AND f.id IN (SELECT file_id FROM favourites)";
+    if (m.collectionId) {
+        q.sql += " AND f.id IN (SELECT file_id FROM collection_items WHERE collection_id = ?)";
+        q.params.emplace_back(*m.collectionId);
+    }
 
     const std::string direction = m.descending ? " DESC" : " ASC";
     std::string order;
@@ -121,6 +134,7 @@ SqlQuery buildSearchSql(const SearchModel& m)
     case SortField::Bpm: order = "ft.bpm IS NULL, ft.bpm" + direction; break;
     case SortField::Duration: order = "f.duration" + direction; break;
     case SortField::Key: order = "ft.key IS NULL, ft.key" + direction; break;
+    case SortField::Rating: order = "rt.rating IS NULL, rt.rating" + direction; break;
     }
     q.sql += " ORDER BY " + order + ", f.id LIMIT ? OFFSET ?";
     q.params.emplace_back(static_cast<std::int64_t>(m.limit));

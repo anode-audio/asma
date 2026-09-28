@@ -13,7 +13,7 @@
 namespace asma {
 
 enum class SampleType { Any, Loop, OneShot };
-enum class SortField { Name, Bpm, Duration, Key };
+enum class SortField { Name, Bpm, Duration, Key, Rating };
 
 struct SearchModel {
     std::string text;                  // every word must prefix-match name, folder or tags
@@ -26,6 +26,9 @@ struct SearchModel {
     std::optional<double> durationMax;
     std::vector<std::string> formats;  // any of
     std::optional<std::int64_t> rootId;
+    std::optional<int> minRating;              // 1 to 5; unrated files never match
+    bool favouritesOnly = false;
+    std::optional<std::int64_t> collectionId;
     SortField sort = SortField::Name;
     bool descending = false;
     int limit = 500;
@@ -42,6 +45,8 @@ struct SearchRow {
     std::optional<double> bpm;
     std::optional<std::string> key;
     std::optional<bool> isLoop;
+    std::optional<int> rating;
+    bool favourite = false;
 };
 
 using SqlParam = std::variant<std::int64_t, double, std::string>;

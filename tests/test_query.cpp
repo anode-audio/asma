@@ -2,6 +2,7 @@
 #include "TestUtil.h"
 #include "asma/core/Library.h"
 #include "asma/core/Query.h"
+#include "asma/core/UserData.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -185,6 +186,47 @@ TEST_CASE("rows carry what the CLI prints", "[query]")
     CHECK(rows[0].key == "Am");
     CHECK(rows[0].isLoop == true);
     CHECK(rows[0].rootPath == s.lib.root(s.root)->path);
+}
+
+TEST_CASE("rating, favourite and collection facets", "[query]")
+{
+    Seeded s;
+    UserData user(s.db);
+    user.setRating(s.kick, 5);
+    user.setRating(s.padLoop, 3);
+    user.setRating(s.snare, 1);
+    user.setFavourite(s.padLoop, true);
+    const auto set = user.createCollection("Set");
+    user.addToCollection(set, s.snare);
+    user.addToCollection(set, s.flacHit);
+
+    SearchModel rated;
+    rated.minRating = 3;
+    CHECK(ids(search(s.db, rated)) == Ids{s.kick, s.padLoop});
+
+    SearchModel favourites;
+    favourites.favouritesOnly = true;
+    CHECK(ids(search(s.db, favourites)) == Ids{s.padLoop});
+
+    SearchModel collection;
+    collection.collectionId = set;
+    CHECK(ids(search(s.db, collection)) == Ids{s.flacHit, s.snare});
+
+    SearchModel both;
+    both.collectionId = set;
+    both.minRating = 1;
+    CHECK(ids(search(s.db, both)) == Ids{s.snare});
+
+    SearchModel byRating;
+    byRating.sort = SortField::Rating;
+    byRating.descending = true;
+    const auto rows = search(s.db, byRating);
+    REQUIRE(rows.size() == 5);
+    CHECK(ids({rows.begin(), rows.begin() + 3}) == Ids{s.kick, s.padLoop, s.snare});
+    CHECK_FALSE(rows[4].rating); // unrated sorts last either way
+    CHECK(rows[0].rating == 5);
+    CHECK_FALSE(rows[0].favourite);
+    CHECK(rows[1].favourite);
 }
 
 // Hidden: run with ./build/tests/asma_tests "[.perf]" on a Release build.
