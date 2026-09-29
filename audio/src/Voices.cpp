@@ -15,7 +15,7 @@ void VoicePool::prepare(int outputRate, int maxBlock)
 }
 
 void VoicePool::noteOn(int note, float velocity, SampleSource& source, std::uint64_t generation, PlayOptions options,
-                       int rootNote)
+                       int rootNote, float gain)
 {
     noteOff(note);
     auto pick = std::find_if(voices_.begin(), voices_.end(), [](const Voice& v) { return v.stage == Stage::Off; });
@@ -32,7 +32,7 @@ void VoicePool::noteOn(int note, float velocity, SampleSource& source, std::uint
     v.head.start(source, options);
     v.stage = v.head.active() ? Stage::Attack : Stage::Off;
     v.note = note;
-    v.velocity = std::clamp(velocity, 0.0f, 1.0f);
+    v.velocity = std::clamp(velocity, 0.0f, 1.0f) * gain;
     v.level = 0.0f;
     v.started = ++counter_;
     v.generation = generation;

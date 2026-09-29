@@ -26,12 +26,13 @@ public:
 
     void prepare(int outputRate, int maxBlock);
 
-    // velocity 0..1. A note already sounding is released and started again
-    // on a fresh voice. With all voices busy, a releasing voice is taken
-    // first, then the oldest. `generation` is the preview's, so the caller
-    // can keep the source alive while the voice uses it.
+    // velocity 0..1, times `gain` (loudness matching). A note already
+    // sounding is released and started again on a fresh voice. With all
+    // voices busy, a releasing voice is taken first, then the oldest.
+    // `generation` is the preview's, so the caller can keep the source alive
+    // while the voice uses it.
     void noteOn(int note, float velocity, SampleSource& source, std::uint64_t generation, PlayOptions options,
-                int rootNote);
+                int rootNote, float gain = 1.0f);
     void noteOff(int note);
     void releaseAll();
     void kill(); // silence at once

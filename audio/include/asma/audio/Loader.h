@@ -25,7 +25,8 @@ struct Preview {
     std::uint64_t generation = 0;
     std::shared_ptr<SampleSource> source; // null when the file could not be opened
     SampleInfo info;
-    std::string error; // why source is null
+    std::string error;     // why source is null
+    bool autoplay = false; // start as soon as it arrives
 };
 
 // Turns selections into previews off the audio thread, keeps streaming
@@ -47,7 +48,7 @@ public:
 
     // Asks for a file; a newer selection replaces one not loaded yet.
     // Returns the selection's generation.
-    std::uint64_t select(const std::filesystem::path& path, SampleInfo info = {});
+    std::uint64_t select(const std::filesystem::path& path, SampleInfo info = {}, bool autoplay = false);
 
     // Audio thread: the newest preview that arrived since the last call, or
     // null. It stays valid while its generation is at or above what the audio
@@ -69,6 +70,7 @@ private:
         std::uint64_t generation = 0;
         std::filesystem::path path;
         SampleInfo info;
+        bool autoplay = false;
     };
     struct Live {
         std::shared_ptr<Preview> preview;

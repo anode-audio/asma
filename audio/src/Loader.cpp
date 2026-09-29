@@ -34,13 +34,13 @@ void Loader::start()
     });
 }
 
-std::uint64_t Loader::select(const std::filesystem::path& path, SampleInfo info)
+std::uint64_t Loader::select(const std::filesystem::path& path, SampleInfo info, bool autoplay)
 {
     std::uint64_t generation = 0;
     {
         const std::lock_guard lock(requestMutex_);
         generation = nextGeneration_++;
-        request_ = Request{generation, path, std::move(info)};
+        request_ = Request{generation, path, std::move(info), autoplay};
     }
     wake_.notify_one();
     return generation;
@@ -75,6 +75,7 @@ bool Loader::pump()
         auto preview = std::make_shared<Preview>();
         preview->generation = request->generation;
         preview->info = std::move(request->info);
+        preview->autoplay = request->autoplay;
         try {
             preview->source = openSource(request->path, cache_);
         } catch (const ProbeError& e) {
