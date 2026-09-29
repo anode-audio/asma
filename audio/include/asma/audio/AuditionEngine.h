@@ -47,6 +47,7 @@ struct EngineStatus {
 class AuditionEngine {
 public:
     static constexpr double kStopFadeSeconds = 0.005;
+    static constexpr double kMaxPrimeSeconds = 0.1; // longest wait for a streamed start
 
     explicit AuditionEngine(PreviewCache& cache) : loader_(cache) {}
 
@@ -70,7 +71,7 @@ public:
     void setTransport(const Transport& transport) { transport_ = transport; }
     void noteOn(int note, float velocity);
     void noteOff(int note);
-    // Writes n <= maxBlock stereo frames.
+    // Writes n stereo frames; more than maxBlock is fine.
     void process(float* const* out, int n);
 
     EngineStatus status() const;
@@ -86,6 +87,7 @@ private:
         double value = 0.0;
     };
 
+    void processChunk(float* const* out, int n, bool first);
     void push(const Command& command);
     void handle(const Command& command);
     void adopt(Preview* preview);
@@ -93,7 +95,8 @@ private:
     // audible one has faded out. `offset`: frames into this block, where
     // rendering stands when the request is made.
     void requestStart(int offset);
-    void startNow();
+    // False while a streamed start is still loading.
+    bool startNow();
     void beginStop();
     double bpm() const { return transport_.bpm > 0.0 ? transport_.bpm : sync_.hostBpm; }
     SyncPlan plan(const Preview& preview) const;
@@ -120,6 +123,9 @@ private:
     std::uint64_t playWanted_ = 0; // generation play() asked for before it arrived
     State state_ = State::Idle;
     bool restartAfterFade_ = false;
+    std::uint64_t stoppedThrough_ = 0; // stop() covered selections up to this generation
+    int chunkOffset_ = 0;              // where the current chunk starts in the host's block
+    double primed_ = 0.0;              // frames waited so far for a streamed start
     std::int64_t wait_ = 0; // frames until a quantised start
     int fade_ = 0;          // frames left in the stop fade
     int fadeFrames_ = 1;

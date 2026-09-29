@@ -46,6 +46,12 @@ public:
     // Where playback is and which way it is moving (+1 or -1), so a
     // streaming source can read ahead.
     virtual void hint(std::int64_t /*frame*/, int /*direction*/) {}
+    // The region a loop repeats, [start, end), so a streaming source keeps
+    // its far end loaded for the wrap; end -1 means no loop.
+    virtual void region(std::int64_t /*start*/, std::int64_t /*end*/) {}
+    // Whether the frame can be read now. A streaming source may still be
+    // loading it.
+    virtual bool ready(std::int64_t /*frame*/) const { return true; }
 };
 
 // A decoded file held in memory.

@@ -173,3 +173,24 @@ TEST_CASE("RenderCache evicts the least recently used past its capacity", "[rend
     CHECK(fs::exists(d)); // the file being dragged always stays
     CHECK_FALSE(fs::exists(a));
 }
+
+TEST_CASE("renderToFile refuses an empty region and an absurd sample rate", "[render]")
+{
+    TempDir dir;
+    const auto src = dir.path() / "a.wav";
+    test::writeWavFloat(src, 1000, {counting(1000)}); // 1 s
+    const auto out = dir.path() / "out.wav";
+    RenderSettings s;
+    s.edits.trimStart = 2.0; // past the end
+    CHECK_THROWS_AS(renderToFile(src, s, out), std::invalid_argument);
+    s.edits.trimStart = 0.6;
+    s.edits.trimEnd = 0.4; // ends before it starts
+    CHECK_THROWS_AS(renderToFile(src, s, out), std::invalid_argument);
+    s.edits = {};
+    s.edits.direction = Direction::Reverse;
+    s.sampleRate = 10;
+    CHECK_THROWS_AS(renderToFile(src, s, out), std::invalid_argument);
+    s.sampleRate = 1000000;
+    CHECK_THROWS_AS(renderToFile(src, s, out), std::invalid_argument);
+    CHECK_FALSE(fs::exists(out));
+}

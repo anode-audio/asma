@@ -138,3 +138,20 @@ TEST_CASE("openSource keeps short files in memory and streams long ones", "[stre
     CHECK(b->frames() == 10001);
     CHECK(cache.size() == 1);
 }
+
+TEST_CASE("StreamSource keeps a looping region's other end loaded", "[stream]")
+{
+    auto s = stream(60);
+    s->region(40 * B, 44 * B); // a trimmed loop, four blocks long
+    s->hint(43 * B, 1);        // about to wrap back to 40
+    s->fill(100);
+    CHECK(readAndCheck(*s, 40 * B, 64));
+    CHECK(s->ready(40 * B));
+    CHECK_FALSE(readAndCheck(*s, 50 * B, 64)); // past the region: never plays
+    CHECK_FALSE(s->ready(50 * B));
+
+    s->hint(41 * B, -1); // reversed: wraps to the far end
+    s->fill(100);
+    CHECK(readAndCheck(*s, 43 * B, 64));
+    CHECK(s->ready(0)); // the head is always there
+}

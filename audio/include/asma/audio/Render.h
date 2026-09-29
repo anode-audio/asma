@@ -26,8 +26,9 @@ struct RenderSettings {
 // with the source's channel count (up to two). The length is exact: the
 // trimmed pass divided by the ratio, so a synced loop lands on the grid.
 // Writes to a temporary name and renames, so `out` never holds half a file.
-// Throws ProbeError when the source cannot be read and std::runtime_error
-// when the output cannot be written.
+// Throws ProbeError when the source cannot be read, std::invalid_argument for
+// a trim that leaves nothing or a sample rate outside 1 kHz..768 kHz, and
+// std::runtime_error when the output cannot be written.
 void renderToFile(const std::filesystem::path& source, const RenderSettings& settings,
                   const std::filesystem::path& out);
 

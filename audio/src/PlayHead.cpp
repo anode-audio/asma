@@ -39,6 +39,11 @@ void PlayHead::start(SampleSource& source, const PlayOptions& options)
     passes_ = 0;
     fadeSource_ = std::max(1.0, kFadeSeconds * outputRate_ * step_);
     beginPass(true);
+    // Let a streaming source load where this starts and, for a loop, where it
+    // wraps to (-1: no wrap).
+    if (loop_ && !pingPong_) source.region(a_, b_);
+    else source.region(0, -1);
+    source.hint(static_cast<std::int64_t>(pos_), dir_);
 }
 
 void PlayHead::beginPass(bool first)

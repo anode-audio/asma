@@ -281,3 +281,88 @@ TEST_CASE("AuditionEngine never allocates on the audio thread", "[engine]")
     CHECK(allocations == 0);
     CHECK(rig.engine.status().voices == 0);
 }
+
+TEST_CASE("AuditionEngine keeps a stop pressed while an auto-play selection loads", "[engine]")
+{
+    Rig rig;
+    SampleInfo loop;
+    loop.isLoop = true;
+    rig.engine.select(rig.file("a.wav", counting(4800)), loop, true);
+    rig.run(1024);
+    const auto b = rig.file("b.wav", counting(4800, 0.5f));
+    rig.engine.select(b, loop, true); // arrowed onto b...
+    rig.engine.stop();                // ...and stopped before b arrived
+    const auto out = rig.run(2048);
+    CHECK_FALSE(rig.engine.status().playing);
+    CHECK(out[kFade + 10] == 0.0f);
+    rig.engine.play(); // b is still the selection
+    CHECK(rig.run(512)[0] == Catch::Approx(0.50001f));
+}
+
+TEST_CASE("AuditionEngine takes blocks larger than it was prepared for", "[engine]")
+{
+    Rig rig;
+    const auto samples = counting(4800);
+    rig.engine.select(rig.file("a.wav", samples), {}, true);
+    rig.engine.loader().pump();
+    std::vector<float> l(1024), r(1024);
+    float* out[] = {l.data(), r.data()};
+    rig.engine.process(out, 1024); // prepared for 256
+    CHECK(l[0] == samples[0]);
+    CHECK(l[1023] == samples[1023]);
+    CHECK(r[700] == samples[700]);
+}
+
+TEST_CASE("AuditionEngine follows a manual tempo change without restarting", "[engine]")
+{
+    Rig rig;
+    SampleInfo loop;
+    loop.isLoop = true;
+    loop.bpm = 100.0;
+    loop.bpmConfidence = 0.9;
+    SyncSettings sync;
+    sync.hostBpm = 120.0; // the standalone's tempo field, no transport
+    rig.engine.setSync(sync);
+    rig.engine.select(rig.file("a.wav", test::sine(220.0, 4.0, 0.5, kRate)), loop, true);
+    rig.run(9600);
+    const double before = rig.engine.status().position;
+    CHECK(rig.engine.status().ratio == Catch::Approx(1.2));
+    sync.hostBpm = 110.0;
+    rig.engine.setSync(sync);
+    const auto out = rig.run(512);
+    CHECK(rig.engine.status().position > before); // kept going
+    CHECK(rig.engine.status().ratio == Catch::Approx(1.1));
+    CHECK(std::abs(out[kFade]) + std::abs(out[kFade + 1]) + std::abs(out[kFade + 2]) > 0.0f); // no stop fade
+}
+
+TEST_CASE("AuditionEngine silences the old sample when auto-play lands on a broken file", "[engine]")
+{
+    Rig rig;
+    SampleInfo loop;
+    loop.isLoop = true;
+    rig.engine.select(rig.file("a.wav", counting(4800)), loop, true);
+    rig.run(1024);
+    const auto bad = rig.dir.path() / "bad.wav";
+    test::writeBytes(bad, "RIFF\x04\x00\x00\x00WAVEjunk");
+    rig.engine.select(bad, {}, true);
+    const auto out = rig.run(1024);
+    CHECK(out[kFade + 10] == 0.0f);
+    CHECK_FALSE(rig.engine.status().playing);
+}
+
+TEST_CASE("AuditionEngine waits for a trimmed start deep in a long file to load", "[engine]")
+{
+    Rig rig;
+    const auto longFile = rig.dir.path() / "long.wav";
+    test::writeWavFloat(longFile, 1000, {counting(1000000)}); // 1000 s at 1 kHz: streams
+    Edits e;
+    e.trimStart = 800.0; // past the 10 s kept in memory and the first read-ahead
+    rig.engine.setEdits(e);
+    rig.engine.select(longFile, {}, true);
+    const auto out = rig.run(4096);
+    const std::size_t first = firstSound(out);
+    REQUIRE(first < out.size());
+    // It starts with its fade-in (1/5 of the level on the first frame), not
+    // cutting in once the block turns up.
+    CHECK(out[first] < counting(800001)[800000] / 2.0f);
+}

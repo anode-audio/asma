@@ -99,6 +99,24 @@ void StreamSource::hint(std::int64_t frame, int direction)
     direction_.store(direction < 0 ? -1 : 1, std::memory_order_relaxed);
 }
 
+void StreamSource::region(std::int64_t start, std::int64_t end)
+{
+    regionStart_.store(start, std::memory_order_relaxed);
+    regionEnd_.store(end, std::memory_order_relaxed);
+}
+
+bool StreamSource::resident(std::int64_t block) const
+{
+    return std::any_of(slots_.begin(), slots_.end(), [&](const Slot& s) { return s.block.load() == block; });
+}
+
+bool StreamSource::ready(std::int64_t frame) const
+{
+    if (frame < 0 || frame >= frames_) return true; // silence needs no loading
+    const std::int64_t block = frame / kBlockFrames;
+    return pinned(block) || resident(block);
+}
+
 int StreamSource::fill(int maxBlocks)
 {
     const std::int64_t count = blockCount();
@@ -106,17 +124,32 @@ int StreamSource::fill(int maxBlocks)
     const std::int64_t here = std::clamp<std::int64_t>(playhead_.load(std::memory_order_relaxed) / kBlockFrames, 0, count - 1);
     const int dir = direction_.load(std::memory_order_relaxed);
 
-    // The playhead's block, kSlots - 2 more in the direction of travel and one
-    // behind (ping-pong turns around), nearest first; pinned blocks need no slot.
-    std::vector<std::int64_t> wanted;
-    for (std::int64_t i = 0; i < kSlots - 1; ++i) wanted.push_back(here + dir * i);
+    // The region playback stays in, as blocks.
+    const std::int64_t end = regionEnd_.load(std::memory_order_relaxed);
+    const std::int64_t first = std::clamp<std::int64_t>(regionStart_.load(std::memory_order_relaxed) / kBlockFrames, 0, count - 1);
+    const std::int64_t last = end < 0 || end > frames_ ? count - 1 : std::clamp<std::int64_t>((end - 1) / kBlockFrames, first, count - 1);
+    const bool inside = end >= 0 && here >= first && here <= last; // wrap only inside a loop's region
+
+    // The playhead's block, then the far end of the region it wraps to, then
+    // what follows in the direction of travel (wrapping inside the region),
+    // then one behind (ping-pong turns around). Pinned blocks need no slot.
+    std::vector<std::int64_t> wanted{here};
+    if (inside) wanted.push_back(dir > 0 ? first : last);
+    for (std::int64_t i = 1, b = here; i < kSlots - 1; ++i) {
+        b += dir;
+        if (inside && b > last) b = first;
+        if (inside && b < first) b = last;
+        wanted.push_back(b);
+    }
     wanted.push_back(here - dir);
-    std::erase_if(wanted, [&](std::int64_t b) { return b < 0 || b >= count || pinned(b); });
+    std::vector<std::int64_t> unique;
+    for (const std::int64_t b : wanted)
+        if (b >= 0 && b < count && !pinned(b) && std::find(unique.begin(), unique.end(), b) == unique.end())
+            unique.push_back(b);
+    if (unique.size() > static_cast<std::size_t>(kSlots)) unique.resize(kSlots);
+    wanted.swap(unique);
 
     const auto isWanted = [&](std::int64_t b) { return std::find(wanted.begin(), wanted.end(), b) != wanted.end(); };
-    const auto resident = [&](std::int64_t b) {
-        return std::any_of(slots_.begin(), slots_.end(), [&](const Slot& s) { return s.block.load() == b; });
-    };
 
     int loaded = 0;
     for (const std::int64_t b : wanted) {

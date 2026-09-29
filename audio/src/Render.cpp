@@ -49,6 +49,8 @@ void writeWav(const fs::path& path, int sampleRate, int channels, const std::vec
 
 void renderToFile(const fs::path& source, const RenderSettings& settings, const fs::path& out)
 {
+    if (settings.sampleRate != 0 && (settings.sampleRate < 1000 || settings.sampleRate > 768000))
+        throw std::invalid_argument("sample rate out of range");
     auto buffer = std::make_shared<const AudioBuffer>(loadAudio(source));
     MemorySource src(buffer);
     const int rate = settings.sampleRate > 0 ? settings.sampleRate : buffer->sampleRate;
@@ -60,6 +62,7 @@ void renderToFile(const fs::path& source, const RenderSettings& settings, const 
     const std::int64_t b = options.trimEnd < 0 || options.trimEnd > buffer->frames() ? buffer->frames()
                                                                                        : std::max(options.trimEnd, a);
     std::int64_t pass = b - a;
+    if (pass <= 0) throw std::invalid_argument("the trim leaves nothing to render");
     if (options.direction == Direction::PingPong && pass >= 2) pass = 2 * pass - 1;
     const double ratio = std::clamp(settings.ratio, Stretcher::kMinRatio, Stretcher::kMaxRatio);
     const auto frames = static_cast<std::size_t>(

@@ -207,7 +207,12 @@ int cmdRender(Args& args, Db& db)
     }
     double transpose = 0.0;
     if (const auto v = args.option("transpose")) transpose = toDouble(*v, "--transpose");
-    if (const auto v = args.option("rate")) settings.sampleRate = static_cast<int>(toDouble(*v, "--rate"));
+    if (const auto v = args.option("rate")) {
+        const double rate = toDouble(*v, "--rate");
+        if (rate != std::floor(rate) || rate < 1000 || rate > 768000)
+            throw UsageError("--rate wants a whole number of Hz from 1000 to 768000");
+        settings.sampleRate = static_cast<int>(rate);
+    }
     const auto cacheOption = args.option("cache");
     const std::filesystem::path cacheDir = cacheOption ? fromUtf8(*cacheOption) : defaultCacheDir() / "renders";
     const auto target = args.positional();

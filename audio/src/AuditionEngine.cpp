@@ -50,6 +50,7 @@ void AuditionEngine::stop()
 {
     Command c;
     c.type = Command::Type::Stop;
+    c.generation = selected_.load(); // also covers selections still loading
     push(c);
 }
 
@@ -94,6 +95,7 @@ void AuditionEngine::handle(const Command& c)
         else playWanted_ = c.generation; // not here yet: start when it arrives
         break;
     case Command::Type::Stop:
+        stoppedThrough_ = std::max(stoppedThrough_, c.generation);
         playWanted_ = 0;
         restartAfterFade_ = false;
         if (state_ == State::Playing) beginStop();
@@ -103,10 +105,15 @@ void AuditionEngine::handle(const Command& c)
         edits_ = c.edits;
         if (sounding && !(state_ == State::Stopping && !restartAfterFade_)) requestStart(0);
         break;
-    case Command::Type::Sync:
+    case Command::Type::Sync: {
+        // A new manual tempo alone is followed as the loop plays, like a host
+        // tempo change; anything else changes the plan and restarts.
+        const bool tempoOnly = c.sync.tempo == sync_.tempo && c.sync.key == sync_.key
+                            && c.sync.projectKey.view() == sync_.projectKey.view();
         sync_ = c.sync;
-        if (sounding && !(state_ == State::Stopping && !restartAfterFade_)) requestStart(0);
+        if (!tempoOnly && sounding && !(state_ == State::Stopping && !restartAfterFade_)) requestStart(0);
         break;
+    }
     case Command::Type::GainMatch:
         gainMatch_ = c.flag;
         if (playing_) gain_ = gainMatch_ ? matchGain(playing_->info) : 1.0f;
@@ -117,7 +124,11 @@ void AuditionEngine::handle(const Command& c)
 
 void AuditionEngine::adopt(Preview* preview)
 {
-    const bool start = preview->autoplay || playWanted_ == preview->generation;
+    // A stop pressed after this selection was made cancels its autoplay; a
+    // file that cannot be opened has nothing to start.
+    const bool start = preview->source
+                    && ((preview->autoplay && preview->generation > stoppedThrough_)
+                        || playWanted_ == preview->generation);
     if (playWanted_ <= preview->generation) playWanted_ = 0;
     current_ = preview;
     if (state_ == State::Waiting) state_ = State::Idle;
@@ -141,19 +152,28 @@ void AuditionEngine::requestStart(int offset)
     }
     // Waiting counts from where rendering is now, `offset` frames into the block.
     wait_ = 0;
+    primed_ = 0;
     if (quantise_ > 0.0 && transport_.playing && bpm() > 0.0) {
-        const double ppq = transport_.ppq + offset * bpm() / (60.0 * sampleRate_);
+        const double ppq = transport_.ppq + (chunkOffset_ + offset) * bpm() / (60.0 * sampleRate_);
         wait_ = framesToNextBoundary(ppq, bpm(), sampleRate_, quantise_);
     }
     state_ = State::Waiting;
 }
 
-void AuditionEngine::startNow()
+bool AuditionEngine::startNow()
 {
-    playing_ = current_;
     SampleSource& source = *current_->source;
-    plan_ = plan(*current_);
     head_.start(source, toPlayOptions(edits_, source.sampleRate(), current_->info.isLoop.value_or(false)));
+    // A start deep in a streamed file waits, briefly, for its block: better
+    // late than cutting in after silence.
+    if (head_.active() && !source.ready(static_cast<std::int64_t>(head_.position()))
+        && primed_ < kMaxPrimeSeconds * sampleRate_) {
+        head_.stop();
+        return false;
+    }
+    primed_ = 0;
+    playing_ = current_;
+    plan_ = plan(*current_);
     stretcher_.setTiming(plan_.ratio, plan_.semitones);
     // Synced sounds always run through the stretch, so a tempo change mid-loop can follow.
     stretcher_.start(head_, !(plan_.tempoSynced || plan_.keySynced));
@@ -161,6 +181,7 @@ void AuditionEngine::startNow()
     restartAfterFade_ = false;
     state_ = head_.active() ? State::Playing : State::Idle;
     if (state_ == State::Idle) playing_ = nullptr;
+    return true;
 }
 
 void AuditionEngine::beginStop()
@@ -189,9 +210,23 @@ void AuditionEngine::noteOff(int note) { voices_.noteOff(note); }
 
 void AuditionEngine::process(float* const* out, int n)
 {
-    Command command;
-    while (commands_.pop(command)) handle(command);
-    if (Preview* preview = loader_.takeReady()) adopt(preview);
+    // Hosts may send more than they announced: work in prepared-size chunks.
+    for (int done = 0; done < n;) {
+        const int m = std::min(n - done, maxBlock_);
+        float* chunk[2] = {out[0] + done, out[1] + done};
+        chunkOffset_ = done;
+        processChunk(chunk, m, done == 0);
+        done += m;
+    }
+}
+
+void AuditionEngine::processChunk(float* const* out, int n, bool first)
+{
+    if (first) {
+        Command command;
+        while (commands_.pop(command)) handle(command);
+        if (Preview* preview = loader_.takeReady()) adopt(preview);
+    }
 
     // A synced loop follows the host tempo as it changes.
     if (state_ == State::Playing && plan_.tempoSynced) {
@@ -213,7 +248,10 @@ void AuditionEngine::process(float* const* out, int n)
             }
             done += static_cast<int>(wait_);
             wait_ = 0;
-            startNow();
+            if (!startNow()) {
+                primed_ += n - done; // try again next block
+                break;
+            }
             continue;
         }
         int m = n - done;

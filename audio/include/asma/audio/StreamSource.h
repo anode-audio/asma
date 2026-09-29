@@ -39,6 +39,8 @@ public:
     std::int64_t frames() const override { return frames_; }
     bool read(std::int64_t start, int n, float* const* out) override;
     void hint(std::int64_t frame, int direction) override;
+    void region(std::int64_t start, std::int64_t end) override;
+    bool ready(std::int64_t frame) const override;
 
     // Loader thread: loads up to maxBlocks missing blocks around the playhead,
     // nearest first. Returns how many it loaded. A read error ends streaming:
@@ -57,6 +59,7 @@ private:
 
     std::int64_t blockCount() const { return (frames_ + kBlockFrames - 1) / kBlockFrames; }
     bool pinned(std::int64_t block) const { return block < headBlocks_ || block == blockCount() - 1; }
+    bool resident(std::int64_t block) const;
     // Reads one block into planar channels `stride` floats apart.
     void loadBlock(std::int64_t block, float* base, std::int64_t stride);
     // Copies part of one block into out; false when the block is not loaded.
@@ -72,6 +75,8 @@ private:
     std::array<Slot, kSlots> slots_;
     std::atomic<std::int64_t> playhead_{0};
     std::atomic<int> direction_{1};
+    std::atomic<std::int64_t> regionStart_{0};
+    std::atomic<std::int64_t> regionEnd_{-1}; // -1: not looping
     std::atomic<bool> failed_{false};
     std::atomic<std::int64_t> underruns_{0};
 };
