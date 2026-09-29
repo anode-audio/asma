@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "TestUtil.h"
+#include "asma/audio/SampleSource.h"
 #include "asma/core/Db.h"
 #include "asma/core/Fs.h"
 #include "asma/core/WriterLock.h"
@@ -295,4 +296,35 @@ TEST_CASE("collections and saved searches from the CLI", "[e2e]")
     CHECK(cli.runAsma("collection rename " + quote(asma::fromUtf8("Set Ü")) + " Keepers").exitCode == 0);
     CHECK(cli.runAsma("collection delete Keepers").exitCode == 0);
     CHECK(cli.runAsma("query").out.find("Bass_Loop") != std::string::npos); // files stay
+}
+
+TEST_CASE("asma render prints the file to drag", "[e2e]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
+    const auto loop = cli.lib / "Loops" / "Bass_Loop_Am_128.wav";
+    const auto kick = cli.lib / "Drums" / asma::fromUtf8("Kick Ü_01.wav");
+    const std::string cache = " --cache " + quote(cli.dir.path() / "renders");
+    const auto printed = [](const RunResult& r) { return asma::fromUtf8(r.out.substr(0, r.out.find('\n'))); };
+
+    // The name says 128 and loop: at 100 it stretches by 100/128.
+    const RunResult synced = cli.runAsma("render " + quote(loop) + " --tempo 100" + cache);
+    REQUIRE(synced.exitCode == 0);
+    const auto rendered = printed(synced);
+    CHECK(rendered.parent_path() == cli.dir.path() / "renders");
+    CHECK(asma::audio::loadAudio(rendered).frames() == 5645); // 4410 * 128 / 100
+
+    // A one-shot keeps its tempo: nothing to render, the original is dragged.
+    const RunResult oneShot = cli.runAsma("render " + quote(kick) + " --tempo 100" + cache);
+    CHECK(oneShot.exitCode == 0);
+    CHECK(printed(oneShot) == kick);
+
+    const RunResult reversed = cli.runAsma("render " + quote(kick) + " --reverse" + cache);
+    CHECK(reversed.exitCode == 0);
+    CHECK(printed(reversed) != kick);
+
+    CHECK(cli.runAsma("render " + quote(kick) + " --reverse --ping-pong").exitCode == 2);
+    CHECK(cli.runAsma("render " + quote(kick) + " --key Q").exitCode == 2);
+    CHECK(cli.runAsma("render " + quote(cli.lib / "gone.wav") + " --reverse" + cache).exitCode == 1);
 }

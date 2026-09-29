@@ -8,7 +8,7 @@ endif()
 asma_set_warnings(asma_cli_support)
 
 add_executable(asma asma_main.cpp OrganiseCommands.cpp)
-target_link_libraries(asma PRIVATE asma_cli_support)
+target_link_libraries(asma PRIVATE asma_cli_support asma::audio)
 target_compile_definitions(asma PRIVATE ASMA_VERSION="${PROJECT_VERSION}")
 asma_set_warnings(asma)
 

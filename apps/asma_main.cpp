@@ -4,11 +4,14 @@
 #include "OrganiseCommands.h"
 #include "SearchArgs.h"
 
+#include "asma/audio/Render.h"
+#include "asma/audio/Sync.h"
 #include "asma/core/Analyser.h"
 #include "asma/core/Db.h"
 #include "asma/core/Fs.h"
 #include "asma/core/Json.h"
 #include "asma/core/Library.h"
+#include "asma/core/NameParse.h"
 #include "asma/core/Query.h"
 #include "asma/core/Scanner.h"
 #include "asma/core/Similar.h"
@@ -40,6 +43,9 @@ constexpr const char* kUsageText =
     "  collection list | create <name> | rename <name> <new> | delete <name>\n"
     "  collection add|remove <name> <file>... | --id N...\n"
     "  search list | save <name> [query options] [words...] | delete <name>\n"
+    "  render <file> [--trim-start S] [--trim-end S] [--reverse | --ping-pong]\n"
+    "         [--tempo BPM] [--key K] [--transpose N] [--rate HZ] [--cache DIR]\n"
+    "                          print the file to drag, rendering edits if any\n"
     "  --version\n";
 
 // One line per row: TSV (path, bpm, key, type, duration[, similarity]) or JSON,
@@ -177,6 +183,58 @@ int cmdSimilar(Args& args, Db& db)
     return kOk;
 }
 
+int cmdRender(Args& args, Db& db)
+{
+    audio::RenderSettings settings;
+    if (const auto v = args.option("trim-start")) settings.edits.trimStart = toDouble(*v, "--trim-start");
+    if (const auto v = args.option("trim-end")) settings.edits.trimEnd = toDouble(*v, "--trim-end");
+    const bool reverse = args.flag("reverse");
+    const bool pingPong = args.flag("ping-pong");
+    if (reverse && pingPong) throw UsageError("--reverse and --ping-pong do not go together");
+    if (reverse) settings.edits.direction = audio::Direction::Reverse;
+    if (pingPong) settings.edits.direction = audio::Direction::PingPong;
+    audio::SyncSettings sync;
+    sync.tempo = false;
+    if (const auto v = args.option("tempo")) {
+        sync.tempo = true;
+        sync.hostBpm = toDouble(*v, "--tempo");
+    }
+    if (const auto v = args.option("key")) {
+        const auto key = parseKeyToken(*v);
+        if (!key) throw UsageError("not a key: " + *v);
+        sync.key = true;
+        sync.projectKey = audio::KeyName(*key);
+    }
+    double transpose = 0.0;
+    if (const auto v = args.option("transpose")) transpose = toDouble(*v, "--transpose");
+    if (const auto v = args.option("rate")) settings.sampleRate = static_cast<int>(toDouble(*v, "--rate"));
+    const auto cacheOption = args.option("cache");
+    const std::filesystem::path cacheDir = cacheOption ? fromUtf8(*cacheOption) : defaultCacheDir() / "renders";
+    const auto target = args.positional();
+    rejectLeftovers(args);
+    if (!target) throw UsageError("render needs a file");
+
+    const std::filesystem::path source = std::filesystem::absolute(fromUtf8(*target));
+    Library lib(db);
+    audio::SampleInfo info;
+    std::string hash;
+    if (const auto file = lib.fileByAbsolutePath(source)) {
+        info = audio::sampleInfo(lib, file->id);
+        hash = file->contentHash;
+    }
+    const audio::SyncPlan plan = audio::planSync(info, sync);
+    if (plan.tempoUnsure) std::cerr << "asma: the tempo is unknown or a guess; left as it is\n";
+    else if (sync.tempo && !plan.tempoSynced) std::cerr << "asma: not a loop; tempo left as it is\n";
+    if (plan.keyUnsure) std::cerr << "asma: the key is a guess; not transposed\n";
+    else if (sync.key && !plan.keySynced) std::cerr << "asma: no key known; not transposed\n";
+    settings.ratio = plan.ratio;
+    settings.semitones = plan.semitones + transpose;
+
+    audio::RenderCache cache(cacheDir);
+    std::cout << toUtf8(cache.fileFor(source, settings, hash)) << "\n";
+    return kOk;
+}
+
 int cmdQuery(Args& args, Db& db)
 {
     const bool json = args.flag("json");
@@ -208,6 +266,7 @@ int main(int argc, char** argv)
             {"tag", cmdTag},
             {"collection", cmdCollection},
             {"search", cmdSearch},
+            {"render", cmdRender},
         };
         if (*command == "scan") {
             Db db = Db::open(dbPath);

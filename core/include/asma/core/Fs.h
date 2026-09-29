@@ -39,6 +39,14 @@ using FilePtr = std::unique_ptr<std::FILE, FileCloser>;
 // The directory is not created.
 std::filesystem::path defaultDataDir();
 
+// Per-user cache directory, for files that can be made again. ASMA_CACHE_DIR
+// wins when set; otherwise
+// macOS: ~/Library/Caches/Anode Labs/asma
+// Windows: %LOCALAPPDATA%\Anode Labs\asma\Cache
+// Linux: $XDG_CACHE_HOME/anode-labs/asma, else ~/.cache/anode-labs/asma
+// The directory is not created.
+std::filesystem::path defaultCacheDir();
+
 // Last-write time as an opaque integer in the file clock's native ticks. Only
 // meaningful for equality and ordering on the same machine.
 std::int64_t fileTimeToInt(std::filesystem::file_time_type time);
