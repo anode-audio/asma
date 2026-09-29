@@ -35,7 +35,9 @@ TEST_CASE("non-finite numbers become null", "[json]")
 
 TEST_CASE("JsonLine writes string arrays", "[json]")
 {
-    CHECK(JsonLine().strings("keys", {"Am", "C\"#"}).build() == R"({"keys":["Am","C\"#"]})");
+    // Not inline in CHECK: MSVC's preprocessor misreads a raw string holding \"#.
+    const std::string escaped = R"({"keys":["Am","C\"#"]})";
+    CHECK(JsonLine().strings("keys", {"Am", "C\"#"}).build() == escaped);
     CHECK(JsonLine().strings("keys", {}).build() == R"({"keys":[]})");
 }
 
