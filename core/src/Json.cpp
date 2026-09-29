@@ -341,7 +341,8 @@ private:
         in.imbue(std::locale::classic());
         double value = 0.0;
         in >> value;
-        if (!std::isfinite(value)) fail("number out of range");
+        // libstdc++ clamps an overflow to DBL_MAX and sets failbit; libc++ gives inf.
+        if (in.fail() || !std::isfinite(value)) fail("number out of range");
         return value;
     }
 
