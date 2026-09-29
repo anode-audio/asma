@@ -19,6 +19,18 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+// A library written for a different schema than this build's. Older: a
+// writer (the app or the asma CLI) must open it once to migrate it. Newer:
+// this build is out of date.
+class SchemaMismatchError : public DbError {
+public:
+    explicit SchemaMismatchError(int found);
+    int found() const { return found_; }
+
+private:
+    int found_;
+};
+
 // A prepared statement. Bind indices are 1-based, column indices 0-based.
 class Statement {
 public:
@@ -64,6 +76,11 @@ public:
     // Opens or creates the file (and its parent directories), enables WAL and
     // migrates to the current schema.
     static Db open(const std::filesystem::path& file);
+    // Opens an existing library for reading only, as the plugin does inside a
+    // host: nothing is created or migrated, and any write throws DbError.
+    // Throws DbError when the file cannot be opened, SchemaMismatchError when
+    // its schema is not this build's.
+    static Db openReadOnly(const std::filesystem::path& file);
     // Private in-memory database migrated to schemaVersion (default: the
     // current one), for tests.
     static Db openInMemory(int schemaVersion = -1);
@@ -82,7 +99,7 @@ public:
 
 private:
     explicit Db(sqlite3* db) : db_(db) {}
-    static Db openHandle(const std::string& utf8Name);
+    static Db openHandle(const std::string& utf8Name, int flags);
 
     sqlite3* db_ = nullptr;
 };

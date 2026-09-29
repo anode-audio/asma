@@ -120,10 +120,10 @@ std::vector<unsigned char> Statement::getBlob(int column) const
     return data ? std::vector<unsigned char>(data, data + size) : std::vector<unsigned char>();
 }
 
-Db Db::openHandle(const std::string& utf8Name)
+Db Db::openHandle(const std::string& utf8Name, int flags)
 {
     sqlite3* raw = nullptr;
-    const int rc = sqlite3_open_v2(utf8Name.c_str(), &raw, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+    const int rc = sqlite3_open_v2(utf8Name.c_str(), &raw, flags, nullptr);
     Db db(raw); // owns the handle even on failure, so it gets closed
     if (rc != SQLITE_OK) fail(raw, "cannot open database " + utf8Name);
     sqlite3_busy_timeout(raw, 5000);
@@ -134,16 +134,24 @@ Db Db::openHandle(const std::string& utf8Name)
 Db Db::open(const std::filesystem::path& file)
 {
     if (file.has_parent_path()) std::filesystem::create_directories(file.parent_path());
-    Db db = openHandle(toUtf8(file));
+    Db db = openHandle(toUtf8(file), SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA synchronous = NORMAL");
     migrate(db);
     return db;
 }
 
+Db Db::openReadOnly(const std::filesystem::path& file)
+{
+    Db db = openHandle(toUtf8(file), SQLITE_OPEN_READONLY);
+    const int version = db.schemaVersion();
+    if (version != currentSchemaVersion()) throw SchemaMismatchError(version);
+    return db;
+}
+
 Db Db::openInMemory(int schemaVersion)
 {
-    Db db = openHandle(":memory:");
+    Db db = openHandle(":memory:", SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
     migrate(db, schemaVersion < 0 ? currentSchemaVersion() : schemaVersion);
     return db;
 }
@@ -175,6 +183,13 @@ void Db::exec(std::string_view sql)
 Statement Db::prepare(std::string_view sql) { return Statement(db_, sql); }
 
 std::int64_t Db::lastInsertId() const { return sqlite3_last_insert_rowid(db_); }
+
+SchemaMismatchError::SchemaMismatchError(int found)
+    : DbError("library schema version " + std::to_string(found) + ", this asma build uses "
+              + std::to_string(currentSchemaVersion())),
+      found_(found)
+{
+}
 
 int Db::schemaVersion()
 {

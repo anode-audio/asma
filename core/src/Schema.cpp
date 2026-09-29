@@ -134,10 +134,7 @@ void migrate(Db& db, int targetVersion)
         // open the same new database cannot both apply the same migration.
         Transaction tx(db);
         const int version = db.schemaVersion();
-        if (version > currentSchemaVersion())
-            throw DbError("database schema version " + std::to_string(version)
-                          + " is newer than this asma build supports ("
-                          + std::to_string(currentSchemaVersion()) + ")");
+        if (version > currentSchemaVersion()) throw SchemaMismatchError(version);
         if (version >= targetVersion) {
             tx.commit();
             return;

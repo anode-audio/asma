@@ -8,8 +8,8 @@ class Db;
 int currentSchemaVersion();
 
 // Applies pending migrations up to targetVersion (default: current), each in
-// its own transaction. Throws DbError when the database was written by a newer
-// asma.
+// its own transaction. Throws SchemaMismatchError when the database was
+// written by a newer asma.
 void migrate(Db& db, int targetVersion = -1);
 
 } // namespace asma
