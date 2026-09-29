@@ -47,6 +47,24 @@ right for 69% of the files it reports a key for. To measure your own library
 
     ASMA_EVAL_DIR=~/Samples ./build/tests/asma_tests "[.real]"
 
+## Audition and drag-out
+
+`asma_audio` is the audition engine the app and plugin play through, built
+without JUCE so it runs and tests headless: trim, reverse and ping-pong, loops
+stretched to the host tempo, transpose to the project key, loudness matching and
+eight MIDI voices. `asma render` prints the file a drag should carry: the
+original when nothing changes the audio, otherwise a render with the edits baked
+in.
+
+    asma render ~/Samples/Loops/Funk_96.wav --tempo 120   # stretched, same pitch
+    asma render ~/Samples/Keys/Rhodes_Am.wav --key C#m --reverse
+    asma render ~/Samples/Drums/Kick_01.wav               # no edits: the file itself
+
+Sync only happens when asma is sure of the sample's tempo or key; otherwise it
+says so and leaves the sample alone. Renders live in the platform cache
+directory (on macOS `~/Library/Caches/Anode Labs/asma/renders`), capped at 2 GB;
+`--cache DIR` or the `ASMA_CACHE_DIR` environment variable override it.
+
 ## License
 
 GPLv3. See `LICENSE`.

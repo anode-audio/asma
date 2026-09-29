@@ -117,11 +117,15 @@ SQLite database read directly by every UI instance. No long-lived daemon.
    - `fileops`: planning, preflight, journal, execute, undo.
 2. **`asma-scan`**: worker executable. Wraps `asma-core` `index` and `analysis`,
    reports progress as JSON lines on stdout.
-3. **`asma` CLI**: `scan`, `query`, `similar`, `dedupe`, `undo`. Used by CI and
-   power users.
-4. **`asma-ui`** (JUCE component library): browser table, sidebar, filter bar,
-   waveform, audition engine, theme. Shared by both shells.
-5. **Standalone and plugin shells**: thin wrappers around `asma-ui`. Only the
+3. **`asma` CLI**: `scan`, `query`, `similar`, `render`, `dedupe`, `undo`. Used
+   by CI and power users.
+4. **`asma-audio`** (static library, no JUCE): the audition engine of section 8
+   and the drag-out renders. Built on `asma-core`'s decoders and Signalsmith
+   Stretch, so it runs and tests headless; the plugin's audio callback calls it
+   directly.
+5. **`asma-ui`** (JUCE component library): browser table, sidebar, filter bar,
+   waveform, theme. Shared by both shells.
+6. **Standalone and plugin shells**: thin wrappers around `asma-ui`. Only the
    standalone enables file operations and spawns the scanner. If the plugin is
    the only asma instance running, it can request a scan by launching
    `asma-scan`, which still runs outside the host process.
@@ -235,18 +239,38 @@ contributor ergonomics.
 
 ## 8. Audition engine
 
-- **Loading:** files under ~10 s are decoded fully; longer files stream with
-  read-ahead. An LRU cache keeps recent previews warm. Decoding runs off the
-  audio thread; the audio thread only swaps in ready buffers, lock-free.
-- **Chain:** trim, direction (forward, reverse, ping-pong), time-stretch and
-  pitch-shift (Signalsmith Stretch), LUFS-based gain matching, short anti-click
-  fades.
-- **Sync:** loops stretch to the current tempo and start on the next beat or bar
-  (optional quantised start). Transpose-to-key takes the shortest interval. Sync
-  and transpose only apply above a confidence threshold; below it the sample
-  plays unmodified and shows a "?" badge.
+- **Loading:** files up to 10 s are decoded fully; longer files stream in
+  blocks, with the first 10 s and the last block loaded up front so playback
+  starts at once in either direction, and the rest read ahead in the direction
+  of travel. An LRU cache (256 MB of samples) keeps recent previews warm.
+  Decoding runs on a loader thread; the audio thread only takes ready previews
+  from a lock-free queue, and a preview is freed only once the audio thread
+  reports it no longer plays it (as the selection, the sound fading out, or a
+  ringing MIDI voice). The audio thread never allocates.
+- **Chain:** trim, direction (forward, reverse, ping-pong), resampling to the
+  output rate, time-stretch and pitch-shift (Signalsmith Stretch, pre-rolled so
+  the first frame still comes out first), LUFS-based gain matching (to -16 LUFS,
+  at most +12 dB, never boosting the peak past -1 dBFS; files not analysed yet
+  are measured on load when short, and play at unity when streamed), and 5 ms
+  anti-click fades. Fades go only where a sound would click: not at a forward
+  start from frame 0, a one-shot's own end, or the wrap of an untrimmed forward
+  loop. An edit while a sample plays restarts it; switching samples fades the
+  old one out first.
+- **Sync:** loops stretch to the current tempo, choosing half or double time
+  when that is closer to the original, and can start on the next beat or bar
+  while the transport plays (optional quantised start). A synced loop follows
+  tempo changes as it plays. Transpose-to-key takes the shortest interval
+  (-6..+5 semitones), to the project's relative key when the modes differ. Sync
+  and transpose only apply at a tempo confidence of 0.3 or a key confidence of
+  0.7 and above (file names and embedded chunks always qualify); below it the
+  sample plays unmodified and shows a "?" badge. The thresholds were measured on
+  labelled libraries. Key sync is off by default: on guitar recordings key
+  detection was unreliable at every confidence.
 - **MIDI:** incoming notes play the selected sample pitched from a root note
-  (detected pitch if available, else C3). 8-voice polyphony, simple AR envelope.
+  (the `smpl` chunk's, else MIDI note 60, which most DAWs call C3), like a
+  classic sampler: speed changes with pitch. Each note plays the trimmed region
+  once in the chosen direction. 8-voice polyphony, linear AR envelope (2 ms, 80
+  ms); a new note beyond eight takes a releasing voice first, then the oldest.
 - **Plugin output:** the preview is rendered into the plugin's audio output, so
   it's heard through the channel's inserts. By default the plugin stays silent
   while the host transport is stopped unless the user is auditioning.
@@ -270,10 +294,15 @@ identity.
 
 ### Drag out
 
-- No edits active: drag the original file path.
-- Edits active (trim, reverse, stretch, pitch): render to
-  `<cache>/renders/<hash>-<params>.wav` at the host sample rate if known, then
-  drag that file. The render cache is capped (default 2 GB, LRU eviction).
+- No edits active: drag the original file path. A sample-rate difference alone
+  is not an edit; the DAW converts on import.
+- Edits active (trim, reverse, stretch, pitch): render one pass to
+  `<cache>/renders/<hash>-<params>.wav` (32-bit float, the file's channels) at
+  the host sample rate if known, then drag that file. The length is exact, the
+  trimmed pass divided by the tempo ratio, so a synced loop lands on the grid.
+  The render cache is capped (default 2 GB, LRU eviction; the file being dragged
+  is never evicted). `<cache>` is `~/Library/Caches/Anode Labs/asma`,
+  `%LOCALAPPDATA%\Anode Labs\asma\Cache` or `$XDG_CACHE_HOME/anode-labs/asma`.
 
 ### Plugin state
 
@@ -306,7 +335,7 @@ CMake + Ninja. Dependencies fetched with CPM/FetchContent at pinned versions:
 | clap-juce-extensions              | CLAP target                      | MIT                   |
 | SQLite (with FTS5)                | database                         | public domain         |
 | xxHash                            | content hashing                  | BSD-2                 |
-| Signalsmith Stretch               | time-stretch, pitch-shift        | MIT                   |
+| Signalsmith Stretch (and Linear)  | time-stretch, pitch-shift        | MIT                   |
 | dr_libs (dr_flac, dr_mp3, dr_wav) | decoding in asma-core            | MIT-0 / public domain |
 | stb_vorbis                        | Ogg Vorbis decoding in asma-core | MIT / public domain   |
 | libebur128                        | LUFS                             | MIT                   |
@@ -314,7 +343,7 @@ CMake + Ninja. Dependencies fetched with CPM/FetchContent at pinned versions:
 | Catch2                            | tests                            | BSL-1.0               |
 
 asma-core decodes audio with dr_libs and stb_vorbis rather than JUCE, so the
-core, the CLI and the scanner build without JUCE.
+core, the audio engine, the CLI and the scanner build without JUCE.
 
 ## 12. Testing
 
