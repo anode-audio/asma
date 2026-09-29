@@ -4,6 +4,7 @@
 #include "asma/core/ScanEvents.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -23,6 +24,10 @@ struct ScanRequest {
     std::int64_t rootId = 0;
     unsigned threads = 0; // 0: the worker's default
     bool analyse = true;
+    // A worker that prints nothing for this long is stuck (a decoder looping
+    // on a corrupt file): it is killed and handled like a crash, so the file
+    // it was working on gets marked.
+    std::chrono::seconds stallTimeout{120};
 };
 
 struct ScanReport {

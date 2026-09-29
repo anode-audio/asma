@@ -30,7 +30,8 @@ struct FakeScan {
 
     explicit FakeScan(const char* text) : script("ASMA_FAKE_SCAN", text) {}
 
-    ScanReport run(unsigned threads = 4, bool analyse = true, ScanSupervisor::Listener listener = {})
+    ScanReport run(unsigned threads = 4, bool analyse = true, ScanSupervisor::Listener listener = {},
+                   std::chrono::seconds stall = std::chrono::seconds(120))
     {
         ScanRequest request;
         request.worker = fromUtf8(ASMA_TEST_CHILD_PATH);
@@ -38,6 +39,7 @@ struct FakeScan {
         request.rootId = 1;
         request.threads = threads;
         request.analyse = analyse;
+        request.stallTimeout = stall;
         return supervisor.run(request, listener);
     }
 
@@ -162,6 +164,26 @@ TEST_CASE("cancel stops a hanging worker promptly", "[supervisor]")
     // The supervisor can run again afterwards.
     FakeScan again("files=a");
     CHECK(again.run().result == Result::Finished);
+}
+
+TEST_CASE("a worker that stops talking is treated as a crash and its file marked", "[supervisor]")
+{
+    FakeScan fake("files=a;hang=1"); // hangs on the first file it starts, every time
+    const auto started = std::chrono::steady_clock::now();
+    const ScanReport report = fake.run(4, true, {}, std::chrono::seconds(1));
+    CHECK(report.result == Result::Finished);
+    CHECK(report.culprits == std::vector<std::pair<ScanPhase, std::string>>{{ScanPhase::Index, "a"}});
+    CHECK(report.runs == 3);
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(20));
+}
+
+TEST_CASE("a listener that throws leaves the supervisor usable", "[supervisor]")
+{
+    FakeScan fake("files=a,b");
+    CHECK_THROWS_AS(fake.run(4, true, [](const ScanEvent&) { throw std::runtime_error("ui gone"); }),
+                    std::runtime_error);
+    fake.supervisor.cancel(); // must not touch the worker that is gone
+    CHECK(fake.run().result == Result::Finished);
 }
 
 TEST_CASE("a cancel while no scan runs does not cancel the next one", "[supervisor]")

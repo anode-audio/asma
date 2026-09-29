@@ -62,7 +62,10 @@ this contract; the recovery decisions live in `asma::ScanRecovery`, which is
 tested without processes. After a single-threaded run pins a file, the next run
 goes back to the requested thread count. A crash that no file explains ends the
 scan after two single-threaded tries, and so does a file that crashes the worker
-again after it was marked. `error` events end the scan without a retry.
+again after it was marked. `error` events end the scan without a retry. A worker
+that prints nothing for `ScanRequest::stallTimeout` (120 s by default) is killed
+and handled as a crash, so a file that hangs the decoder is marked like one that
+crashes it.
 
 On Windows `asma-scan` turns off the crash dialog (`SetErrorMode`), so a crash
 ends the process at once instead of waiting for someone to dismiss a window.

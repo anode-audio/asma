@@ -4,6 +4,9 @@
 #include "asma/core/Fs.h"
 #include "asma/core/Subprocess.h"
 
+#include <condition_variable>
+#include <thread>
+
 namespace asma {
 
 std::vector<std::string> scanArguments(const ScanRequest& request, const ScanAttempt& attempt)
@@ -59,7 +62,48 @@ ScanReport ScanSupervisor::run(const ScanRequest& request, const Listener& liste
         }
         if (cancelled_) worker->kill(); // cancel() came between the check above and here
 
+        // Kills the worker when it goes quiet for stallTimeout; the run then
+        // ends like a crash, with the stuck file still in flight.
+        std::mutex watchMutex;
+        std::condition_variable watchWake;
+        bool workerDone = false;
+        auto lastActivity = std::chrono::steady_clock::now();
+        std::thread watchdog([&] {
+            std::unique_lock lock(watchMutex);
+            while (!workerDone) {
+                const auto deadline = lastActivity + request.stallTimeout;
+                if (watchWake.wait_until(lock, deadline, [&] { return workerDone; })) break;
+                if (std::chrono::steady_clock::now() >= lastActivity + request.stallTimeout) {
+                    worker->kill();
+                    break;
+                }
+            }
+        });
+        const auto stopWatchdog = [&] {
+            if (!watchdog.joinable()) return;
+            {
+                std::lock_guard lock(watchMutex);
+                workerDone = true;
+            }
+            watchWake.notify_all();
+            watchdog.join();
+        };
+        // On every way out of this run, including a listener that throws:
+        // no watchdog left running, no pointer to a destroyed worker.
+        struct Cleanup {
+            std::function<void()> run;
+            ~Cleanup() { run(); }
+        } cleanup{[&] {
+            stopWatchdog();
+            std::lock_guard lock(mutex_);
+            current_ = nullptr;
+        }};
+
         while (const auto line = worker->readLine()) {
+            {
+                std::lock_guard lock(watchMutex);
+                lastActivity = std::chrono::steady_clock::now();
+            }
             const auto event = parseScanEvent(*line);
             if (!event) continue;
             if (event->kind == ScanEvent::Kind::Done) report.index = event->index;
@@ -67,6 +111,7 @@ ScanReport ScanSupervisor::run(const ScanRequest& request, const Listener& liste
             recovery.onEvent(*event);
             if (listener) listener(*event);
         }
+        stopWatchdog();
         worker->wait();
         {
             std::lock_guard lock(mutex_);
