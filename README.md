@@ -18,6 +18,17 @@ and Linux. Work in progress.
     asma query dusty --tag drums --json
     asma similar ~/Samples/Drums/Kick_01.wav
 
+Ratings, favourites, tags, collections and saved searches:
+
+    asma rate 5 ~/Samples/Drums/Kick_01.wav     # 0 clears; --id N works too
+    asma fav on ~/Samples/Drums/Kick_01.wav
+    asma tag add punchy ~/Samples/Drums/Kick_01.wav
+    asma collection create "Live set"
+    asma collection add "Live set" ~/Samples/Drums/Kick_01.wav
+    asma query --collection "Live set" --min-rating 4 --favourites
+    asma search save "Fast loops" --type loop --bpm 140-180
+    asma query --saved "Fast loops" --sort rating --desc
+
 The library lives in the platform data directory (on macOS
 `~/Library/Application Support/Anode Labs/asma`); `--db PATH` or the
 `ASMA_DATA_DIR` environment variable override it.

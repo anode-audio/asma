@@ -56,3 +56,13 @@ When the worker exits without finishing, the supervisor restarts it with
 `--threads 1`, and when a single-threaded worker dies, the path it started last
 is passed back with `--fail` if it died while indexing, or `--fail-analysis` if
 it died while analysing.
+
+`asma::ScanSupervisor` (`core/include/asma/core/ScanSupervisor.h`) implements
+this contract; the recovery decisions live in `asma::ScanRecovery`, which is
+tested without processes. After a single-threaded run pins a file, the next run
+goes back to the requested thread count. A crash that no file explains ends the
+scan after two single-threaded tries, and so does a file that crashes the worker
+again after it was marked. `error` events end the scan without a retry.
+
+On Windows `asma-scan` turns off the crash dialog (`SetErrorMode`), so a crash
+ends the process at once instead of waiting for someone to dismiss a window.

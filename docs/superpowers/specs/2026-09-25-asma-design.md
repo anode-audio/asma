@@ -181,9 +181,16 @@ Rules:
 
 ### Single writer
 
-Only `asma-scan` and standalone file operations write. A lock file in the data
-directory holds the writer's PID; a stale lock (dead PID) is taken over. File
-operations wait for a running scan to finish, or pause it.
+Only `asma-scan` and standalone file operations take the writer lock. A lock
+file in the data directory holds the writer's PID; a stale lock (dead PID) is
+taken over. File operations wait for a running scan to finish, or pause it.
+
+User data (ratings, favourites, user tags, collections, saved searches) is
+written in short transactions without the writer lock, so rating a sample never
+waits for a scan to end; SQLite's busy timeout covers the moment a scan batch is
+committing. The plugin never writes inside the host: it runs the `asma` CLI
+(`asma rate`, `asma fav`, `asma tag`, `asma collection`, `asma search`) as a
+short-lived helper process, and opens the library read-only itself.
 
 ### File operations
 
@@ -272,7 +279,8 @@ identity.
 
 Instrument plugin with MIDI input and audio output. Any number of instances
 share the one database. The project saves only the selected sample, the search
-model and view state, never the library itself.
+model (as the same JSON a saved search uses) and view state, never the library
+itself.
 
 ## 10. Error handling
 
