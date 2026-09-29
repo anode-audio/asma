@@ -203,8 +203,23 @@ void apply(Library& lib, std::int64_t rootId, const Job& job, const JobResult& r
         std::error_code ec;
         return candidateRoot && fs::is_directory(fromUtf8(candidateRoot->path), ec);
     });
-    if (moved != candidates.end()) {
-        rec.id = moved->id;
+    std::optional<FileRecord> source;
+    if (moved != candidates.end()) source = *moved;
+    // Moved here from another root that has not been rescanned yet: its row is
+    // still ok there, but the file is gone from its path.
+    if (!source) {
+        for (const auto& c : lib.okFilesWithContent(rec.contentHash, rec.size)) {
+            if (c.rootId == rootId) continue; // this root's own rows are settled by its sweep
+            const auto candidateRoot = lib.root(c.rootId);
+            std::error_code ec;
+            if (!candidateRoot || !fs::is_directory(fromUtf8(candidateRoot->path), ec)) continue;
+            if (fs::exists(fromUtf8(candidateRoot->path) / fromUtf8(c.relPath), ec) || ec) continue;
+            source = c;
+            break;
+        }
+    }
+    if (source) {
+        rec.id = source->id;
         lib.updateFile(rec);
         lib.setDerived(rec.id, derived);
         gone.erase(rec.id);

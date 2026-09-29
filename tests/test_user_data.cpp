@@ -175,3 +175,33 @@ TEST_CASE("removeUserTag drops only user tags and updates text search", "[userda
     for (const auto& [name, source] : f.lib.tags(id)) hasKick = hasKick || name == "kick";
     CHECK(hasKick);
 }
+
+TEST_CASE("user data follows a file moved to another root, whichever root is scanned first", "[userdata]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    UserData user(db);
+    const fs::path a = dir.path() / "a";
+    const fs::path b = dir.path() / "b";
+    fs::create_directories(a);
+    test::WavSpec spec;
+    spec.seed = 11;
+    test::writeWav(b / "Kick.wav", spec);
+    const auto rootA = lib.addRoot(a);
+    const auto rootB = lib.addRoot(b);
+    scanRoot(db, rootA, {});
+    scanRoot(db, rootB, {});
+    const auto id = lib.fileByPath(rootB, "Kick.wav").value().id;
+    user.setRating(id, 4);
+
+    fs::rename(b / "Kick.wav", a / "Kick.wav");
+    const ScanStats first = scanRoot(db, rootA, {}); // the destination first
+    scanRoot(db, rootB, {});
+
+    CHECK(first.relinked == 1);
+    const auto moved = lib.fileByPath(rootA, "Kick.wav").value();
+    CHECK(moved.id == id);
+    CHECK(user.rating(id) == 4);
+    CHECK_FALSE(lib.fileByPath(rootB, "Kick.wav"));
+}

@@ -76,6 +76,9 @@ public:
     std::optional<FileRecord> fileByAbsolutePath(const std::filesystem::path& path);
     // Missing rows in any root whose content matches.
     std::vector<FileRecord> relinkCandidates(std::string_view contentHash, std::int64_t size);
+    // Ok rows in any root whose content matches: a file moved from a root that
+    // has not been rescanned yet still looks present there.
+    std::vector<FileRecord> okFilesWithContent(std::string_view contentHash, std::int64_t size);
 
     std::int64_t insertFile(const FileRecord& file);
     void updateFile(const FileRecord& file); // by file.id, every column

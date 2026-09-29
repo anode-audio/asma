@@ -206,6 +206,14 @@ std::vector<FileRecord> Library::relinkCandidates(std::string_view contentHash, 
     return readFiles(q);
 }
 
+std::vector<FileRecord> Library::okFilesWithContent(std::string_view contentHash, std::int64_t size)
+{
+    auto q = db_.prepare("SELECT " + std::string(kFileColumns)
+                         + " FROM files WHERE status = 'ok' AND content_hash = ? AND size = ? ORDER BY id");
+    q.bind(1, contentHash).bind(2, size);
+    return readFiles(q);
+}
+
 std::int64_t Library::insertFile(const FileRecord& file)
 {
     auto q = db_.prepare("INSERT INTO files(root_id, rel_path, name, size, mtime, content_hash, format, "
