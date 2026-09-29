@@ -294,3 +294,22 @@ TEST_CASE("fileByAbsolutePath finds a file through its root", "[library]")
     CHECK_FALSE(lib.fileByAbsolutePath(dir.path() / "Drums" / "Nope.wav").has_value());
     CHECK_FALSE(lib.fileByAbsolutePath(dir.path().parent_path() / "elsewhere.wav").has_value());
 }
+
+TEST_CASE("loudness is there once the file is analysed", "[library]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto id = lib.insertFile(sampleRecord(lib.addRoot(dir.path()), "a.wav"));
+    CHECK_FALSE(lib.loudness(id));
+    lib.setDerived(id, {});
+    CHECK_FALSE(lib.loudness(id)); // a features row without analysis
+    AnalysisResult r = analysed(120.0, "C", true);
+    r.loudness = {0.5, -14.5};
+    lib.setAnalysis(id, r);
+    const auto l = lib.loudness(id).value();
+    CHECK(l.peak == 0.5);
+    CHECK(l.lufs == -14.5);
+    lib.resetAnalysis(id);
+    CHECK_FALSE(lib.loudness(id));
+}

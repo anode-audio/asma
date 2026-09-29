@@ -362,6 +362,14 @@ std::optional<DerivedInfo> Library::derived(std::int64_t fileId)
     return d;
 }
 
+std::optional<Loudness> Library::loudness(std::int64_t fileId)
+{
+    auto q = db_.prepare("SELECT peak, lufs FROM features WHERE file_id = ? AND peak IS NOT NULL AND lufs IS NOT NULL");
+    q.bind(1, fileId);
+    if (!q.step()) return std::nullopt;
+    return Loudness{q.getDouble(0), q.getDouble(1)};
+}
+
 void Library::setAnalysis(std::int64_t fileId, const AnalysisResult& r)
 {
     auto ensure = db_.prepare("INSERT INTO features(file_id) VALUES (?) ON CONFLICT(file_id) DO NOTHING");

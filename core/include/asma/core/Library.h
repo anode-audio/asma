@@ -97,6 +97,8 @@ public:
     // not retried until its content changes.
     void setAnalysisError(std::int64_t fileId, std::string_view reason);
     std::optional<DerivedInfo> derived(std::int64_t fileId); // tags left empty
+    // Peak and LUFS from analysis; nullopt until the file has been analysed.
+    std::optional<Loudness> loudness(std::int64_t fileId);
 
     void addUserTag(std::int64_t fileId, std::string_view tag);
     // Removes the tag only where the user added it; auto and embedded tags
