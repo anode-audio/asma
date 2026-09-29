@@ -2,6 +2,7 @@
 #include "asma/audio/Loader.h"
 
 #include "asma/audio/StreamSource.h"
+#include "asma/core/Analysis.h"
 #include "asma/core/AudioProbe.h"
 
 #include <algorithm>
@@ -78,6 +79,16 @@ bool Loader::pump()
             preview->source = openSource(request->path, cache_);
         } catch (const ProbeError& e) {
             preview->error = e.what();
+        }
+        // Not analysed yet: a short file is cheap to measure for gain matching.
+        if (const auto* memory = dynamic_cast<const MemorySource*>(preview->source.get()); memory && !preview->info.lufs) {
+            const AudioBuffer& b = memory->buffer();
+            std::vector<float> mono(b.channels[0]);
+            if (b.channelCount() == 2)
+                for (std::size_t i = 0; i < mono.size(); ++i) mono[i] = 0.5f * (mono[i] + b.channels[1][i]);
+            const Loudness l = measureLoudness(mono, b.sampleRate);
+            preview->info.lufs = l.lufs;
+            preview->info.peak = l.peak;
         }
         const std::lock_guard lock(liveMutex_);
         live_.push_back({std::move(preview), false});
