@@ -35,6 +35,7 @@ void ScanSupervisor::cancel()
 ScanReport ScanSupervisor::run(const ScanRequest& request, const Listener& listener)
 {
     using Result = ScanReport::Result;
+    cancelled_ = false; // a Cancel from before this run was for an earlier one
     ScanReport report;
     ScanRecovery recovery(request.threads, request.analyse);
 
@@ -94,7 +95,6 @@ ScanReport ScanSupervisor::run(const ScanRequest& request, const Listener& liste
         break;
     }
     report.culprits = recovery.culprits();
-    cancelled_ = false;
     return report;
 }
 

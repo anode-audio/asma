@@ -45,9 +45,9 @@ public:
 
     ScanReport run(const ScanRequest& request, const Listener& listener = {});
 
-    // Stops the scan: kills the worker and makes run() return Cancelled. Safe
-    // from any thread. A call while no run() is active cancels the next one
-    // as soon as it starts, so a cancel that races the start is not lost.
+    // Stops the scan in progress: kills the worker and makes run() return
+    // Cancelled. Safe from any thread. A call while no run() is active does
+    // nothing, so a Cancel pressed as a scan ends never stops the next one.
     void cancel();
 
 private:

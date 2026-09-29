@@ -164,11 +164,12 @@ TEST_CASE("cancel stops a hanging worker promptly", "[supervisor]")
     CHECK(again.run().result == Result::Finished);
 }
 
-TEST_CASE("a cancel before run starts is not lost", "[supervisor]")
+TEST_CASE("a cancel while no scan runs does not cancel the next one", "[supervisor]")
 {
+    // A Cancel pressed just as a scan ends must not kill the user's next scan.
     FakeScan fake("files=a");
+    CHECK(fake.run().result == Result::Finished);
     fake.supervisor.cancel();
-    CHECK(fake.run().result == Result::Cancelled);
     CHECK(fake.run().result == Result::Finished);
 }
 
