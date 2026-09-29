@@ -56,6 +56,17 @@ TEST_CASE("a crash is reported as signalled", "[subprocess]")
     CHECK(p.wait().signalled);
 }
 
+TEST_CASE("abort ends the child at once, with no dialog to wait behind", "[subprocess]")
+{
+    // On Windows, abort() would otherwise report to Windows Error Reporting.
+    const auto started = std::chrono::steady_clock::now();
+    auto p = child({"abort"});
+    readAll(p);
+    const ExitStatus status = p.wait();
+    CHECK((status.signalled || status.code != 0));
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(10));
+}
+
 TEST_CASE("arguments arrive unchanged, whatever they contain", "[subprocess]")
 {
     const Strings tricky = {"plain", "two words", "", "quote\"inside", "trailing\\", "back\\\\\"slash",

@@ -67,5 +67,6 @@ that prints nothing for `ScanRequest::stallTimeout` (120 s by default) is killed
 and handled as a crash, so a file that hangs the decoder is marked like one that
 crashes it.
 
-On Windows `asma-scan` turns off the crash dialog (`SetErrorMode`), so a crash
-ends the process at once instead of waiting for someone to dismiss a window.
+On Windows `asma-scan` turns off the crash dialog (`SetErrorMode`) and abort's
+report and message box (`_set_abort_behavior`), so a crash or an `abort()` ends
+the process at once instead of waiting for someone to dismiss a window.

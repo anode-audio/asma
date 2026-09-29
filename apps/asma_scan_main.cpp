@@ -13,10 +13,6 @@
 #include <iostream>
 #include <string>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 using namespace asma;
 using namespace asma::cli;
 
@@ -28,11 +24,7 @@ void emit(const JsonLine& line) { std::cout << line.build() << '\n' << std::flus
 
 int main(int argc, char** argv)
 {
-#ifdef _WIN32
-    // A crash must end the process at once so the supervisor can restart it,
-    // not wait behind a Windows Error Reporting dialog.
-    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
-#endif
+    disableCrashDialogs();
     setupConsole();
     try {
         Args args = Args::fromMain(argc, argv);

@@ -6,6 +6,7 @@
 //   args A B...   each argument as a JSON string, one per line
 //   exit N        exit with code N
 //   crash         die the way a real crash does
+//   abort         call std::abort(), as an uncaught exception would
 //   hang          print "ready", then sleep for a minute
 // Started with --db first, it stands in for asma-scan, driven by
 // ASMA_FAKE_SCAN ("key=value;..."):
@@ -17,6 +18,7 @@
 //   hang=1             sleep for a minute after the first start event
 // Each run appends its arguments, one line, to ASMA_FAKE_SCAN_LOG.
 #include "Args.h"
+#include "CliCommon.h"
 
 #include "asma/core/Json.h"
 
@@ -33,6 +35,8 @@
 #include <vector>
 
 #ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
 #include <windows.h>
 #endif
 
@@ -40,7 +44,6 @@
 {
     std::cout << std::flush;
 #ifdef _WIN32
-    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX); // no crash dialog on CI
     RaiseException(EXCEPTION_ACCESS_VIOLATION, EXCEPTION_NONCONTINUABLE, 0, nullptr);
 #endif
     std::abort();
@@ -143,6 +146,10 @@ int fakeScan(asma::cli::Args& args, const std::vector<std::string>& raw)
 
 int main(int argc, char** argv)
 {
+    asma::cli::disableCrashDialogs(); // what asma-scan does, so the crash tests cover it
+#ifdef _WIN32
+    _setmode(_fileno(stdout), _O_BINARY); // "crlf" must send \r\n, not \r\r\n
+#endif
     asma::cli::Args parsed = asma::cli::Args::fromMain(argc, argv);
     std::vector<std::string> args = parsed.rest();
     if (args.empty()) return 2;
@@ -162,6 +169,10 @@ int main(int argc, char** argv)
         return std::stoi(args.at(0));
     else if (mode == "crash")
         crash();
+    else if (mode == "abort") {
+        std::cout << std::flush;
+        std::abort();
+    }
     else if (mode == "hang") {
         std::cout << "ready" << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(60));

@@ -5,6 +5,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+
+#include <cstdlib>
 #endif
 
 namespace asma::cli {
@@ -20,6 +22,14 @@ void setupConsole()
 {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
+#endif
+}
+
+void disableCrashDialogs()
+{
+#ifdef _WIN32
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif
 }
 
