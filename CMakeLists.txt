@@ -17,6 +17,7 @@ include(cmake/Warnings.cmake)
 include(cmake/Dependencies.cmake)
 
 add_subdirectory(core)
+add_subdirectory(audio)
 add_subdirectory(apps)
 
 if(ASMA_BUILD_TESTS)
