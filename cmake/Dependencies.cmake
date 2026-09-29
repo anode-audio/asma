@@ -25,7 +25,14 @@ FetchContent_Declare(ebur128
   GIT_TAG v1.2.6
   GIT_SHALLOW TRUE
   SOURCE_SUBDIR _none)
-FetchContent_MakeAvailable(sqlite xxhash dr_libs stb ebur128)
+# Its own CMakeLists fetches signalsmith-linear 0.6.4.
+FetchContent_Declare(signalsmith_stretch
+  GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+  GIT_TAG a670068d9aeb64913331d5cc29337b19a457a7df # 1.4.0
+  GIT_SHALLOW FALSE)
+FetchContent_MakeAvailable(sqlite xxhash dr_libs stb ebur128 signalsmith_stretch)
+# Header-only; SYSTEM keeps their warnings out of ours.
+set_target_properties(signalsmith-stretch signalsmith-linear PROPERTIES SYSTEM TRUE)
 
 add_library(asma_sqlite STATIC ${sqlite_SOURCE_DIR}/sqlite3.c)
 target_include_directories(asma_sqlite SYSTEM PUBLIC ${sqlite_SOURCE_DIR})

@@ -6,5 +6,9 @@ add_library(asma::audio ALIAS asma_audio)
 target_include_directories(asma_audio
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(asma_audio PUBLIC asma::core Threads::Threads)
+target_link_libraries(asma_audio PUBLIC asma::core Threads::Threads PRIVATE signalsmith-stretch)
 asma_set_warnings(asma_audio)
+if(MSVC)
+  # Signalsmith Stretch instantiates more templates than one object file holds by default.
+  target_compile_options(asma_audio PRIVATE /bigobj)
+endif()
