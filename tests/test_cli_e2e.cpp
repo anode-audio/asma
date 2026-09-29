@@ -56,7 +56,7 @@ RunResult run(const char* exe, const std::string& arguments, const fs::path& scr
     const fs::path outFile = scratch / "stdout.txt";
     RunResult r;
     r.exitCode = systemUtf8(quote(asma::fromUtf8(exe)) + " " + arguments + " > " + quote(outFile));
-    std::ifstream in(outFile, std::ios::binary);
+    std::ifstream in(outFile); // text mode: the CLI writes \r\n on Windows, tests expect \n
     std::stringstream ss;
     ss << in.rdbuf();
     r.out = ss.str();
