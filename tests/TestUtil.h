@@ -226,6 +226,45 @@ inline void writeWavSamples(const fs::path& path, int sampleRate, const std::vec
     writeBytes(path, file);
 }
 
+// 32-bit float WAV, one vector per channel (all the same length). Float keeps
+// every value exact, so playback tests can compare samples one for one.
+inline void writeWavFloat(const fs::path& path, int sampleRate, const std::vector<std::vector<float>>& channels)
+{
+    using namespace detail;
+    const auto count = static_cast<std::uint16_t>(channels.size());
+    std::string fmt;
+    putLe16(fmt, 3); // IEEE float
+    putLe16(fmt, count);
+    putLe32(fmt, static_cast<std::uint32_t>(sampleRate));
+    putLe32(fmt, static_cast<std::uint32_t>(sampleRate * 4 * count));
+    putLe16(fmt, static_cast<std::uint16_t>(4 * count));
+    putLe16(fmt, 32);
+    std::string data;
+    const std::size_t frames = channels.empty() ? 0 : channels[0].size();
+    data.reserve(frames * 4 * count);
+    for (std::size_t i = 0; i < frames; ++i)
+        for (const auto& channel : channels) {
+            std::uint32_t bits = 0;
+            std::memcpy(&bits, &channel[i], 4);
+            putLe32(data, bits);
+        }
+    std::string body = "WAVE";
+    putChunkLe(body, "fmt ", fmt);
+    putChunkLe(body, "data", data);
+    std::string file = "RIFF";
+    putLe32(file, static_cast<std::uint32_t>(body.size()));
+    file += body;
+    writeBytes(path, file);
+}
+
+// 0, 1, 2, ... n-1 scaled by `step`: every frame is recognisable by value.
+inline std::vector<float> ramp(std::size_t n, float step = 1.0f / 65536.0f, float offset = 0.0f)
+{
+    std::vector<float> out(n);
+    for (std::size_t i = 0; i < n; ++i) out[i] = offset + static_cast<float>(i) * step;
+    return out;
+}
+
 struct AiffSpec {
     int sampleRate = 44100;
     int channels = 1;
