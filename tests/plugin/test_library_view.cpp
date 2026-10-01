@@ -10,6 +10,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <sqlite3.h>
 
+#include <cstdlib>
+#include <string>
+
 using namespace asma;
 using app::LibraryState;
 using app::LibraryView;
@@ -132,9 +135,28 @@ TEST_CASE("LibraryView gives up quietly on a library that breaks while open", "[
     LibraryView view(f.dbPath);
     REQUIRE(view.refresh() == LibraryState::Open);
     REQUIRE(view.search({}).size() == 2);
-    // Corrupt the file under the open connection, as a failing disk would.
-    for (const char* suffix : {"-wal", "-shm"}) fs::remove(fs::path(f.dbPath.string() + suffix));
-    test::writeBytes(f.dbPath, std::string(8192, 'x'));
+    // Corrupt the library under the open connection through another one:
+    // Windows will not let a test delete or rewrite files SQLite holds open.
+    {
+        sqlite3* db = nullptr;
+        REQUIRE(sqlite3_open(toUtf8(f.dbPath).c_str(), &db) == SQLITE_OK);
+        int cookie = 0;
+        REQUIRE(sqlite3_exec(
+                    db, "PRAGMA schema_version",
+                    [](void* out, int, char** values, char**) {
+                        *static_cast<int*>(out) = std::atoi(values[0]);
+                        return 0;
+                    },
+                    &cookie, nullptr)
+                == SQLITE_OK);
+        // A new cookie makes the open connection reload the broken schema.
+        const std::string sql = "PRAGMA writable_schema = ON;"
+                                "UPDATE sqlite_master SET sql = 'garbage' WHERE name = 'files';"
+                                "PRAGMA schema_version = "
+                              + std::to_string(cookie + 1) + ";";
+        REQUIRE(sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+        sqlite3_close(db);
+    }
 
     CHECK_NOTHROW(view.changed());
     CHECK(view.search({}).empty());
