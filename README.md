@@ -9,6 +9,12 @@ and Linux. Work in progress.
     cmake --build build
     ctest --test-dir build --output-on-failure
 
+This builds the command line tools and the app: a standalone and VST3, CLAP, AU
+(macOS) and LV2 (Linux) plugins, in `build/plugin/asma_plugin_artefacts`.
+`-DASMA_BUILD_PLUGIN=OFF` skips JUCE and builds only the core and the command
+line. On Linux JUCE needs the ALSA, JACK, FreeType, fontconfig, X11 and GL
+development packages (see `.github/workflows/ci.yml`).
+
 ## Command line
 
     asma root add ~/Samples
@@ -59,11 +65,13 @@ in.
     asma render ~/Samples/Loops/Funk_96.wav --tempo 120   # stretched, same pitch
     asma render ~/Samples/Keys/Rhodes_Am.wav --key C#m --reverse
     asma render ~/Samples/Drums/Kick_01.wav               # no edits: the file itself
+    asma renders                                          # how many, how big
+    asma renders clear
 
 Sync only happens when asma is sure of the sample's tempo or key; otherwise it
-says so and leaves the sample alone. Renders live in the platform cache
-directory (on macOS `~/Library/Caches/Anode Labs/asma/renders`), capped at 2 GB;
-`--cache DIR` or the `ASMA_CACHE_DIR` environment variable override it.
+says so and leaves the sample alone. Renders stay in `renders` in the data
+directory until you clear them: a DAW may play a dragged file from where it
+lies. `--renders DIR` overrides the folder.
 
 ## License
 

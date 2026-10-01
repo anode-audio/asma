@@ -42,7 +42,7 @@ support, speed, and crash isolation.
 
 ## 2. Constraints
 
-- **License:** GPLv3 for asma's own code. JUCE 8 is used under its AGPLv3
+- **License:** GPLv3 for asma's own code. JUCE 9 is used under its AGPLv3
   option, which is compatible.
 - **Repo:** `anode-audio/asma` on GitHub, standalone. It does **not** depend on
   `anode-common` (which is proprietary). The Anode look is reproduced by copying
@@ -71,8 +71,8 @@ support, speed, and crash isolation.
 - **Audition:** click to play, auto-play while navigating, tempo sync for loops,
   transpose to key, MIDI playback, start/end trim, reverse and ping-pong,
   waveform display.
-- **Drag out** to DAW or file manager, rendering edits to a temp WAV when any
-  edit is active.
+- **Drag out** to DAW or file manager, rendering edits to a WAV when any edit is
+  active.
 - **File manager (standalone only):** rename (including batch rename by
   pattern), move, trash, convert format and sample rate, find duplicates by
   hash, export a collection to a folder. Every operation is journaled and
@@ -123,12 +123,15 @@ SQLite database read directly by every UI instance. No long-lived daemon.
    and the drag-out renders. Built on `asma-core`'s decoders and Signalsmith
    Stretch, so it runs and tests headless; the plugin's audio callback calls it
    directly.
-5. **`asma-ui`** (JUCE component library): browser table, sidebar, filter bar,
-   waveform, theme. Shared by both shells.
-6. **Standalone and plugin shells**: thin wrappers around `asma-ui`. Only the
-   standalone enables file operations and spawns the scanner. If the plugin is
-   the only asma instance running, it can request a scan by launching
-   `asma-scan`, which still runs outside the host process.
+5. **`asma-ui`** (`plugin/`, JUCE): the processor, the editor and the parts they
+   share (library view, browser, plugin state, scan job). An INTERFACE library,
+   so the plugin and its headless tests each compile it.
+6. **Standalone and plugin shells**: one JUCE plugin target builds VST3, AU
+   (macOS), CLAP (through clap-juce-extensions), LV2 (Linux) and the Standalone;
+   the processor tells the standalone from a plugin at run time. Only the
+   standalone adds folders and spawns the scanner, which it ships beside its own
+   executable. If the plugin is the only asma instance running, it can request a
+   scan by launching `asma-scan`, which still runs outside the host process.
 
 Each unit is testable without the ones above it: `analysis` with synthetic
 buffers, `index` and `fileops` with temp directories, `query` against an
@@ -273,12 +276,19 @@ contributor ergonomics.
   ms); a new note beyond eight takes a releasing voice first, then the oldest.
 - **Plugin output:** the preview is rendered into the plugin's audio output, so
   it's heard through the channel's inserts. By default the plugin stays silent
-  while the host transport is stopped unless the user is auditioning.
+  while the host transport is stopped unless the user is auditioning. The host's
+  tempo, position and play state reach the engine every block; blocks are split
+  at MIDI events so notes and quantised starts land on their own sample.
+- **Standalone tempo:** Ableton Link when it is on (tempo, beat and start/stop
+  from the session), otherwise the manual tempo.
 
 ## 9. UI
 
 Native JUCE, dark theme by default, palette values copied from the Anode
-identity.
+identity. Plan 3c1 ships a plain browser with the behaviour below that already
+works (search, audition as the selection moves, sync switches, a status line
+with the "?" badge, drag-out, and in the standalone the tempo source and "Add
+folder"); plan 3c2 builds the layout and looks described here.
 
 - **Left sidebar:** roots, collections, saved searches, favourites.
 - **Top bar:** search field, facet chips (type, BPM range, key, instrument,
@@ -297,19 +307,27 @@ identity.
 - No edits active: drag the original file path. A sample-rate difference alone
   is not an edit; the DAW converts on import.
 - Edits active (trim, reverse, stretch, pitch): render one pass to
-  `<cache>/renders/<hash>-<params>.wav` (32-bit float, the file's channels) at
-  the host sample rate if known, then drag that file. The length is exact, the
-  trimmed pass divided by the tempo ratio, so a synced loop lands on the grid.
-  The render cache is capped (default 2 GB, LRU eviction; the file being dragged
-  is never evicted). `<cache>` is `~/Library/Caches/Anode Labs/asma`,
-  `%LOCALAPPDATA%\Anode Labs\asma\Cache` or `$XDG_CACHE_HOME/anode-labs/asma`.
+  `<data dir>/renders/<hash>-<params>.wav` (32-bit float, the file's channels)
+  at the host sample rate if known, then drag that file. The length is exact,
+  the trimmed pass divided by the tempo ratio, so a synced loop lands on the
+  grid.
+- Renders are kept until the user clears them (`asma renders clear`, and a
+  "Clear renders" action in the UI), never evicted automatically: DAWs that play
+  a dragged file where it lies (Reaper, and Live unless the set is collected)
+  would lose audio. They live in the data directory rather than a cache
+  directory so that cleaner apps leave them alone. (macOS itself does not purge
+  `~/Library/Caches`; only apps and cleaners do.)
 
 ### Plugin state
 
 Instrument plugin with MIDI input and audio output. Any number of instances
-share the one database. The project saves only the selected sample, the search
-model (as the same JSON a saved search uses) and view state, never the library
-itself.
+share the one database and one preview cache. The project saves only the
+selected sample, the search model (as the same JSON a saved search uses) and
+view state (sync switches, project key, gain matching, quantise, edits, the
+standalone's tempo source, window size), never the library itself. State is one
+versioned JSON object; unknown fields and bad values are skipped, so a project
+from another asma version loads what it can. A restored selection is loaded
+without playing, with its tempo and key from the library.
 
 ## 10. Error handling
 
@@ -331,7 +349,7 @@ CMake + Ninja. Dependencies fetched with CPM/FetchContent at pinned versions:
 
 | Dependency                        | Use                              | License               |
 | --------------------------------- | -------------------------------- | --------------------- |
-| JUCE 8                            | UI, audio, plugin formats        | AGPLv3                |
+| JUCE 9                            | UI, audio, plugin formats        | AGPLv3                |
 | clap-juce-extensions              | CLAP target                      | MIT                   |
 | SQLite (with FTS5)                | database                         | public domain         |
 | xxHash                            | content hashing                  | BSD-2                 |
@@ -358,7 +376,12 @@ core, the audio engine, the CLI and the scanner build without JUCE.
   ACID chunks; nothing from that library is copied or uploaded.
 - **CLI end to end:** `asma scan` and `asma query` over a fixture tree,
   asserting results.
-- **Plugin validation:** pluginval (VST3, AU) and clap-validator (CLAP).
+- **Plugin tests:** the processor and editor run headless in a JUCE console app
+  (MIDI timing, host transport, state, the browser, drag-out, scanning).
+- **Plugin validation:** pluginval at strictness 10 (VST3 everywhere, AU on
+  macOS) and clap-validator (CLAP) in CI on all three platforms.
+  clap-validator's `param-conversions` test is skipped: it divides by the
+  parameter count, and asma has no parameters.
 - **Performance:** scan and query timings over a synthetic 50k-file library,
   reported in CI (informational, not gating).
 - **CI:** GitHub Actions on macOS, Windows and Linux for every push and PR.
