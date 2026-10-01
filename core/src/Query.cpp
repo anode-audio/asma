@@ -250,8 +250,10 @@ std::optional<SearchModel> searchModelFromJson(std::string_view json)
     m.bpmMin = finiteNumber(doc.get("bpm_min"));
     m.bpmMax = finiteNumber(doc.get("bpm_max"));
     // Keep only keys search can match, in canonical spelling.
-    for (const auto& key : stringArray(doc.get("keys")))
-        if (const auto canonical = parseKeyToken(key)) m.keys.push_back(*canonical);
+    for (const auto& key : stringArray(doc.get("keys"))) {
+        if (auto canonical = canonicalKey(key)) m.keys.push_back(std::move(*canonical));
+        else if (auto parsed = parseKeyToken(key)) m.keys.push_back(std::move(*parsed));
+    }
     m.tags = stringArray(doc.get("tags"));
     m.durationMin = finiteNumber(doc.get("duration_min"));
     m.durationMax = finiteNumber(doc.get("duration_max"));

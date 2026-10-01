@@ -110,6 +110,16 @@ std::vector<std::string> splitTokens(std::string_view text)
     return out;
 }
 
+std::optional<std::string> canonicalKey(std::string_view text)
+{
+    static constexpr std::array<std::string_view, 12> kNames = {"C", "C#", "D", "D#", "E", "F",
+                                                                "F#", "G", "G#", "A", "A#", "B"};
+    const std::string_view root = !text.empty() && text.back() == 'm' ? text.substr(0, text.size() - 1) : text;
+    for (const auto name : kNames)
+        if (name == root) return std::string(text);
+    return std::nullopt;
+}
+
 std::optional<std::string> parseKeyToken(std::string_view token, std::string_view nextToken)
 {
     if (token.empty()) return std::nullopt;

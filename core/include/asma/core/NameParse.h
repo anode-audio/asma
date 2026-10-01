@@ -16,6 +16,11 @@ std::vector<std::string> splitTokens(std::string_view text);
 // "C#m"). nextToken lets "E Minor" be read as one key.
 std::optional<std::string> parseKeyToken(std::string_view token, std::string_view nextToken = {});
 
+// The key when `text` is exactly a canonical key ("C", "F#m"), else nothing.
+// For text asma wrote itself: parseKeyToken refuses a bare "C", which in a
+// file name is more often a word than a key.
+std::optional<std::string> canonicalKey(std::string_view text);
+
 struct NameInfo {
     std::optional<double> bpm;
     std::optional<std::string> key;

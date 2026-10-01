@@ -52,6 +52,15 @@ TEST_CASE("every field round-trips; paging does not", "[searchjson]")
     CHECK(back.offset == 0);
 }
 
+TEST_CASE("natural major keys survive a round trip", "[searchjson]")
+{
+    SearchModel m;
+    m.keys = {"C", "Am", "G", "F#"};
+    const auto back = searchModelFromJson(searchModelToJson(m));
+    REQUIRE(back);
+    CHECK(back->keys == m.keys);
+}
+
 TEST_CASE("unreadable text gives nothing", "[searchjson]")
 {
     CHECK_FALSE(searchModelFromJson(""));

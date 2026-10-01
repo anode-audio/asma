@@ -49,7 +49,8 @@ SearchModel modelFromArgs(Args& args, Db& db)
         }
     }
     for (const auto& key : args.options("key")) {
-        const auto canonical = parseKeyToken(key);
+        auto canonical = canonicalKey(key);
+        if (!canonical) canonical = parseKeyToken(key);
         if (!canonical) throw UsageError("not a key: " + key + " (try Am, C#m, Eb, F#maj)");
         m.keys.push_back(*canonical);
     }

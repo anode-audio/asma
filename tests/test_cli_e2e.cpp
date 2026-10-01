@@ -149,6 +149,7 @@ TEST_CASE("bad usage exits with 2", "[e2e]")
     CHECK(cli.runAsma("frobnicate").exitCode == 2);
     CHECK(cli.runAsma("query --bogus").exitCode == 2);
     CHECK(cli.runAsma("query --key H").exitCode == 2);
+    CHECK(cli.runAsma("query --key C").exitCode == 0); // a plain major key, as asma prints it
     CHECK(cli.runScan("").exitCode == 2);
 }
 

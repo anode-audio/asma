@@ -40,6 +40,12 @@ TEST_CASE("parseKeyToken rejects words and variant markers", "[name]")
     CHECK_FALSE(parseKeyToken("").has_value());
 }
 
+TEST_CASE("canonicalKey takes the keys asma writes and nothing else", "[name]")
+{
+    for (const char* key : {"C", "C#", "A", "Am", "F#m", "B"}) CHECK(canonicalKey(key) == key);
+    for (const char* key : {"", "c", "Bb", "H", "Amin", "C#M", "Am "}) CHECK_FALSE(canonicalKey(key));
+}
+
 TEST_CASE("parseName reads BPM, key and loop from a typical loop", "[name]")
 {
     const NameInfo n = parseName("Loops/Bass_Loop_Am_128.wav");
