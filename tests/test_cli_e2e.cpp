@@ -305,7 +305,7 @@ TEST_CASE("asma render prints the file to drag", "[e2e]")
     REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
     const auto loop = cli.lib / "Loops" / "Bass_Loop_Am_128.wav";
     const auto kick = cli.lib / "Drums" / asma::fromUtf8("Kick Ü_01.wav");
-    const std::string cache = " --cache " + quote(cli.dir.path() / "renders");
+    const std::string cache = " --renders " + quote(cli.dir.path() / "renders");
     const auto printed = [](const RunResult& r) { return asma::fromUtf8(r.out.substr(0, r.out.find('\n'))); };
 
     // The name says 128 and loop: at 100 it stretches by 100/128.
@@ -330,4 +330,12 @@ TEST_CASE("asma render prints the file to drag", "[e2e]")
     CHECK(cli.runAsma("render " + quote(kick) + " --rate 10" + cache).exitCode == 2);
     CHECK(cli.runAsma("render " + quote(kick) + " --rate 44100.5" + cache).exitCode == 2);
     CHECK(cli.runAsma("render " + quote(kick) + " --trim-start 1 --reverse" + cache).exitCode == 1); // 0.1 s file
+
+    // Two renders so far: the stretched loop and the reversed kick.
+    const RunResult size = cli.runAsma("renders" + cache);
+    CHECK(size.exitCode == 0);
+    CHECK(size.out.rfind("2 renders, ", 0) == 0);
+    CHECK(cli.runAsma("renders clear" + cache).out == "2 renders removed\n");
+    CHECK(cli.runAsma("renders" + cache).out == "0 renders, 0 MB\n");
+    CHECK(cli.runAsma("renders shrink" + cache).exitCode == 2);
 }

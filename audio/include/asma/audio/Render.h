@@ -32,16 +32,15 @@ struct RenderSettings {
 void renderToFile(const std::filesystem::path& source, const RenderSettings& settings,
                   const std::filesystem::path& out);
 
-// Rendered drag-out files, <dir>/<content hash>-<settings>.wav, least
-// recently used out first once they pass the capacity. Not thread-safe.
-class RenderCache {
+// Rendered drag-out files, <dir>/<content hash>-<settings>.wav. Nothing is
+// deleted behind the user's back: a DAW may play a dragged file from where it
+// lies, so a render stays until clear(). Not thread-safe.
+class RenderStore {
 public:
-    static constexpr std::uintmax_t kDefaultCapacity = 2ull << 30; // 2 GB
+    explicit RenderStore(std::filesystem::path dir) : dir_(std::move(dir)) {}
 
-    explicit RenderCache(std::filesystem::path dir, std::uintmax_t capacity = kDefaultCapacity)
-        : dir_(std::move(dir)), capacity_(capacity)
-    {
-    }
+    // <data dir>/renders: user data, so cleaner apps that empty caches leave it.
+    static std::filesystem::path defaultDir();
 
     // The file to drag: `source` itself when nothing changes the audio,
     // else a render, made on a miss. contentHash is the library's; empty
@@ -53,12 +52,13 @@ public:
     static std::string fileName(std::string_view contentHash, const RenderSettings& settings, int sampleRate);
 
     const std::filesystem::path& dir() const { return dir_; }
+    // Bytes on disk, temporary files left by an interrupted render included.
+    std::uintmax_t bytes() const;
+    // Deletes every render and leftover temporary file; returns how many.
+    std::size_t clear();
 
 private:
-    void evict(const std::filesystem::path& keep);
-
     std::filesystem::path dir_;
-    std::uintmax_t capacity_;
 };
 
 } // namespace asma::audio

@@ -91,12 +91,12 @@ TEST_CASE("renderToFile plays ping-pong there and back once", "[render]")
     CHECK(b.channels[0][100] == Catch::Approx(99.0f / 100000.0f));
 }
 
-TEST_CASE("RenderCache hands out the original when nothing changes the audio", "[render]")
+TEST_CASE("RenderStore hands out the original when nothing changes the audio", "[render]")
 {
     TempDir dir;
     const auto src = dir.path() / "a.wav";
     test::writeWavFloat(src, 48000, {counting(4800)});
-    RenderCache cache(dir.path() / "renders");
+    RenderStore cache(dir.path() / "renders");
     RenderSettings s;
     s.sampleRate = 44100; // not an edit
     s.edits.loop = LoopMode::On;
@@ -104,12 +104,12 @@ TEST_CASE("RenderCache hands out the original when nothing changes the audio", "
     CHECK_FALSE(fs::exists(dir.path() / "renders"));
 }
 
-TEST_CASE("RenderCache renders once per content and settings", "[render]")
+TEST_CASE("RenderStore renders once per content and settings", "[render]")
 {
     TempDir dir;
     const auto src = dir.path() / "a.wav";
     test::writeWavFloat(src, 48000, {counting(4800)});
-    RenderCache cache(dir.path() / "renders");
+    RenderStore cache(dir.path() / "renders");
     RenderSettings s;
     s.edits.direction = Direction::Reverse;
     const auto first = cache.fileFor(src, s, "00000000000000aa");
@@ -133,45 +133,52 @@ TEST_CASE("RenderCache renders once per content and settings", "[render]")
     CHECK(hashed.filename().string().size() == other.filename().string().size());
 }
 
-TEST_CASE("RenderCache names do not follow the locale", "[render]")
+TEST_CASE("RenderStore names do not follow the locale", "[render]")
 {
     RenderSettings s;
     s.edits.trimStart = 0.5;
     s.ratio = 1.25;
-    const std::string before = RenderCache::fileName("h", s, 44100);
+    const std::string before = RenderStore::fileName("h", s, 44100);
     const char* previous = std::setlocale(LC_NUMERIC, nullptr);
     const std::string saved = previous ? previous : "C";
     for (const char* name : {"de_DE.UTF-8", "de_DE.utf8", "it_IT.UTF-8", "German_Germany.1252"})
         if (std::setlocale(LC_NUMERIC, name)) break;
-    const std::string after = RenderCache::fileName("h", s, 44100);
+    const std::string after = RenderStore::fileName("h", s, 44100);
     std::setlocale(LC_NUMERIC, saved.c_str());
     CHECK(before == "h-s500000-eend-f-x1250000-c0-44100.wav");
     CHECK(after == before);
 }
 
-TEST_CASE("RenderCache evicts the least recently used past its capacity", "[render]")
+TEST_CASE("RenderStore keeps every render until it is cleared", "[render]")
 {
     TempDir dir;
     const auto src = dir.path() / "a.wav";
     test::writeWavFloat(src, 1000, {counting(1000)});
-    // Each reversed render: 1000 frames of float, just over 4000 bytes.
-    RenderCache cache(dir.path() / "renders", 10000);
+    RenderStore store(dir.path() / "renders");
+    CHECK(store.bytes() == 0); // no folder yet
     RenderSettings s;
     s.edits.direction = Direction::Reverse;
-    const auto a = cache.fileFor(src, s, "aaaaaaaaaaaaaaaa");
-    fs::last_write_time(a, fs::last_write_time(a) - std::chrono::hours(2));
-    const auto b = cache.fileFor(src, s, "bbbbbbbbbbbbbbbb");
-    fs::last_write_time(b, fs::last_write_time(b) - std::chrono::hours(1));
-    CHECK(cache.fileFor(src, s, "aaaaaaaaaaaaaaaa") == a); // a used again: now b is the oldest
-    const auto c = cache.fileFor(src, s, "cccccccccccccccc");
-    CHECK(fs::exists(a));
-    CHECK_FALSE(fs::exists(b));
-    CHECK(fs::exists(c));
+    std::vector<fs::path> made;
+    for (const char* hash : {"aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"})
+        made.push_back(store.fileFor(src, s, hash));
+    for (const auto& f : made) CHECK(fs::exists(f)); // a DAW may still use any of them
+    const std::uintmax_t one = fs::file_size(made[0]);
+    CHECK(store.bytes() == 3 * one);
 
-    RenderCache tiny(dir.path() / "renders", 1); // smaller than any render
-    const auto d = tiny.fileFor(src, s, "dddddddddddddddd");
-    CHECK(fs::exists(d)); // the file being dragged always stays
-    CHECK_FALSE(fs::exists(a));
+    test::writeBytes(dir.path() / "renders" / "x.wav.tmp123", "half a render"); // left by a crash
+    CHECK(store.bytes() == 3 * one + 13);
+    CHECK(store.clear() == 4);
+    CHECK(store.bytes() == 0);
+    for (const auto& f : made) CHECK_FALSE(fs::exists(f));
+    CHECK(fs::exists(src)); // only renders go
+}
+
+TEST_CASE("RenderStore lives in the data directory, not a cache", "[render]")
+{
+    TempDir dir;
+    const std::string wanted = dir.path().string();
+    asma::test::ScopedEnv env("ASMA_DATA_DIR", wanted.c_str());
+    CHECK(RenderStore::defaultDir() == dir.path() / "renders");
 }
 
 TEST_CASE("renderToFile refuses an empty region and an absurd sample rate", "[render]")

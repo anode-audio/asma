@@ -47,15 +47,6 @@ TEST_CASE("defaultDataDir honours ASMA_DATA_DIR", "[fs]")
     CHECK(asma::defaultDataDir() == dir.path());
 }
 
-TEST_CASE("defaultCacheDir honours ASMA_CACHE_DIR and differs from the data dir", "[fs]")
-{
-    CHECK(asma::defaultCacheDir() != asma::defaultDataDir());
-    TempDir dir;
-    const std::string wanted = dir.path().string();
-    asma::test::ScopedEnv env("ASMA_CACHE_DIR", wanted.c_str());
-    CHECK(asma::defaultCacheDir() == dir.path());
-}
-
 TEST_CASE("fileTimeToInt orders later times after earlier ones", "[fs]")
 {
     const auto now = fs::file_time_type::clock::now();

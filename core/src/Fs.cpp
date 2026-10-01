@@ -76,22 +76,6 @@ fs::path defaultDataDir()
 #endif
 }
 
-fs::path defaultCacheDir()
-{
-    if (auto dir = envPath("ASMA_CACHE_DIR")) return *dir;
-#if defined(_WIN32)
-    if (auto local = envPath("LOCALAPPDATA")) return *local / "Anode Labs" / "asma" / "Cache";
-    return fs::temp_directory_path() / "Anode Labs" / "asma";
-#elif defined(__APPLE__)
-    if (auto home = envPath("HOME")) return *home / "Library" / "Caches" / "Anode Labs" / "asma";
-    return fs::temp_directory_path() / "Anode Labs" / "asma";
-#else
-    if (auto xdg = envPath("XDG_CACHE_HOME")) return *xdg / "anode-labs" / "asma";
-    if (auto home = envPath("HOME")) return *home / ".cache" / "anode-labs" / "asma";
-    return fs::temp_directory_path() / "anode-labs" / "asma";
-#endif
-}
-
 std::int64_t fileTimeToInt(fs::file_time_type time)
 {
     return static_cast<std::int64_t>(time.time_since_epoch().count());

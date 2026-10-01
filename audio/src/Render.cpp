@@ -100,7 +100,9 @@ void renderToFile(const fs::path& source, const RenderSettings& settings, const 
     }
 }
 
-std::string RenderCache::fileName(std::string_view contentHash, const RenderSettings& s, int sampleRate)
+fs::path RenderStore::defaultDir() { return defaultDataDir() / "renders"; }
+
+std::string RenderStore::fileName(std::string_view contentHash, const RenderSettings& s, int sampleRate)
 {
     const auto micros = [](double seconds) { return std::to_string(std::llround(seconds * 1e6)); };
     const char direction = s.edits.direction == Direction::Forward ? 'f' : s.edits.direction == Direction::Reverse ? 'r' : 'p';
@@ -110,7 +112,7 @@ std::string RenderCache::fileName(std::string_view contentHash, const RenderSett
          + "-" + std::to_string(sampleRate) + ".wav";
 }
 
-fs::path RenderCache::fileFor(const fs::path& source, const RenderSettings& settings, std::string contentHash)
+fs::path RenderStore::fileFor(const fs::path& source, const RenderSettings& settings, std::string contentHash)
 {
     if (!settings.changesAudio()) return source;
     const ProbeResult probe = probeFile(source);
@@ -118,39 +120,34 @@ fs::path RenderCache::fileFor(const fs::path& source, const RenderSettings& sett
     const int rate = settings.sampleRate > 0 ? settings.sampleRate : probe.sampleRate;
     const fs::path out = dir_ / fromUtf8(fileName(contentHash, settings, rate));
     std::error_code ec;
-    if (fs::exists(out, ec)) {
-        fs::last_write_time(out, fs::file_time_type::clock::now(), ec); // used: most recent again
-        return out;
-    }
+    if (fs::exists(out, ec)) return out;
     fs::create_directories(dir_);
     renderToFile(source, settings, out);
-    evict(out);
     return out;
 }
 
-void RenderCache::evict(const fs::path& keep)
+std::uintmax_t RenderStore::bytes() const
 {
-    struct Entry {
-        fs::path path;
-        std::uintmax_t size;
-        fs::file_time_type time;
-    };
-    std::vector<Entry> entries;
     std::uintmax_t total = 0;
     std::error_code ec;
     for (const auto& e : fs::directory_iterator(dir_, ec)) {
-        if (!e.is_regular_file(ec) || e.path().extension() != ".wav") continue;
+        if (!e.is_regular_file(ec)) continue;
         const auto size = e.file_size(ec);
-        if (ec) continue;
-        entries.push_back({e.path(), size, e.last_write_time(ec)});
-        total += size;
+        if (!ec) total += size;
     }
-    std::sort(entries.begin(), entries.end(), [](const Entry& x, const Entry& y) { return x.time < y.time; });
-    for (const Entry& e : entries) {
-        if (total <= capacity_) break;
-        if (e.path == keep) continue;
-        if (fs::remove(e.path, ec)) total -= e.size;
+    return total;
+}
+
+std::size_t RenderStore::clear()
+{
+    std::size_t removed = 0;
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator(dir_, ec)) {
+        const std::string name = toUtf8(e.path().filename());
+        const bool render = e.path().extension() == ".wav" || name.find(".wav.tmp") != std::string::npos;
+        if (render && e.is_regular_file(ec) && fs::remove(e.path(), ec)) ++removed;
     }
+    return removed;
 }
 
 } // namespace asma::audio

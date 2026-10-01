@@ -44,8 +44,9 @@ constexpr const char* kUsageText =
     "  collection add|remove <name> <file>... | --id N...\n"
     "  search list | save <name> [query options] [words...] | delete <name>\n"
     "  render <file> [--trim-start S] [--trim-end S] [--reverse | --ping-pong]\n"
-    "         [--tempo BPM] [--key K] [--transpose N] [--rate HZ] [--cache DIR]\n"
+    "         [--tempo BPM] [--key K] [--transpose N] [--rate HZ] [--renders DIR]\n"
     "                          print the file to drag, rendering edits if any\n"
+    "  renders [clear] [--renders DIR]   size of the kept renders, or delete them\n"
     "  --version\n";
 
 // One line per row: TSV (path, bpm, key, type, duration[, similarity]) or JSON,
@@ -213,8 +214,8 @@ int cmdRender(Args& args, Db& db)
             throw UsageError("--rate wants a whole number of Hz from 1000 to 768000");
         settings.sampleRate = static_cast<int>(rate);
     }
-    const auto cacheOption = args.option("cache");
-    const std::filesystem::path cacheDir = cacheOption ? fromUtf8(*cacheOption) : defaultCacheDir() / "renders";
+    const auto rendersOption = args.option("renders");
+    const std::filesystem::path rendersDir = rendersOption ? fromUtf8(*rendersOption) : audio::RenderStore::defaultDir();
     const auto target = args.positional();
     rejectLeftovers(args);
     if (!target) throw UsageError("render needs a file");
@@ -235,8 +236,27 @@ int cmdRender(Args& args, Db& db)
     settings.ratio = plan.ratio;
     settings.semitones = plan.semitones + transpose;
 
-    audio::RenderCache cache(cacheDir);
-    std::cout << toUtf8(cache.fileFor(source, settings, hash)) << "\n";
+    audio::RenderStore store(rendersDir);
+    std::cout << toUtf8(store.fileFor(source, settings, hash)) << "\n";
+    return kOk;
+}
+
+int cmdRenders(Args& args, Db&)
+{
+    const auto rendersOption = args.option("renders");
+    audio::RenderStore store(rendersOption ? fromUtf8(*rendersOption) : audio::RenderStore::defaultDir());
+    const auto action = args.positional();
+    rejectLeftovers(args);
+    if (action && *action == "clear") {
+        std::cout << store.clear() << " renders removed\n";
+        return kOk;
+    }
+    if (action) throw UsageError("renders takes nothing or clear");
+    std::size_t count = 0;
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator(store.dir(), ec))
+        if (e.path().extension() == ".wav") ++count;
+    std::cout << count << " renders, " << (store.bytes() + (1u << 19)) / (1u << 20) << " MB\n";
     return kOk;
 }
 
@@ -272,6 +292,7 @@ int main(int argc, char** argv)
             {"collection", cmdCollection},
             {"search", cmdSearch},
             {"render", cmdRender},
+            {"renders", cmdRenders},
         };
         if (*command == "scan") {
             Db db = Db::open(dbPath);
