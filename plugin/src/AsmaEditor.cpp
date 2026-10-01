@@ -58,6 +58,15 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
         link_.onClick = [this] { processor_.setLinkEnabled(link_.getToggleState()); };
         addAndMakeVisible(bpm_);
         addAndMakeVisible(link_);
+        addFolder_.onClick = [this] {
+            chooser_ = std::make_unique<juce::FileChooser>("Add a sample folder");
+            chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                                  [this](const juce::FileChooser& chooser) {
+                                      const juce::File folder = chooser.getResult();
+                                      if (folder != juce::File()) addFolder(fromUtf8(folder.getFullPathName().toStdString()));
+                                  });
+        };
+        addAndMakeVisible(addFolder_);
     }
 
     auto& header = table_.getHeader();
@@ -98,6 +107,7 @@ void AsmaEditor::resized()
         auto row = area.removeFromTop(28);
         bpm_.setBounds(row.removeFromLeft(180).reduced(0, 2));
         link_.setBounds(row.removeFromLeft(140).reduced(4, 2));
+        addFolder_.setBounds(row.removeFromRight(140).reduced(0, 2));
     }
     status_.setBounds(area.removeFromBottom(24));
     table_.setBounds(area.reduced(0, 4));
@@ -117,8 +127,30 @@ bool AsmaEditor::keyPressed(const juce::KeyPress& key)
     return false;
 }
 
+void AsmaEditor::addFolder(const std::filesystem::path& folder)
+{
+    ScanJob* scans = processor_.scans();
+    if (!scans) return;
+    std::string why;
+    scanMessage_ = scans->addAndScan(folder, &why) ? juce::String() : juce::String("Cannot add that folder: ") + why;
+    updateStatus();
+}
+
 void AsmaEditor::poll()
 {
+    if (ScanJob* scans = processor_.scans())
+        if (const auto report = scans->takeReport()) {
+            using Result = ScanReport::Result;
+            switch (report->result) {
+            case Result::Finished:
+                scanMessage_ = "Scan finished: " + juce::String(report->index.added) + " added";
+                break;
+            case Result::Locked: scanMessage_ = "Another asma is scanning this library; try again when it is done."; break;
+            case Result::Cancelled: scanMessage_ = "Scan cancelled."; break;
+            case Result::Failed:
+            case Result::Crashed: scanMessage_ = "Scan failed: " + juce::String(report->message); break;
+            }
+        }
     if (browser_.poll()) {
         table_.updateContent();
         showSelection();
@@ -162,6 +194,14 @@ void AsmaEditor::showSelection()
 
 void AsmaEditor::updateStatus()
 {
+    if (ScanJob* scans = processor_.scans(); scans && scans->busy()) {
+        status_.setText(scans->progress(), juce::dontSendNotification);
+        return;
+    }
+    if (scanMessage_.isNotEmpty()) {
+        status_.setText(scanMessage_, juce::dontSendNotification);
+        return;
+    }
     if (library_.state() != LibraryState::Open) {
         status_.setText(library_.message(), juce::dontSendNotification);
         return;
@@ -208,6 +248,7 @@ void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, in
 void AsmaEditor::selectedRowsChanged(int lastRowSelected)
 {
     if (quietSelection_ || lastRowSelected < 0) return;
+    scanMessage_.clear();
     const auto path = browser_.path(lastRowSelected);
     processor_.engine().select(path, browser_.info(lastRowSelected), true);
     processor_.updateState([&](PluginState& s) { s.selected = toUtf8(path); });

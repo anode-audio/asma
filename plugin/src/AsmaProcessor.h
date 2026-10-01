@@ -2,6 +2,7 @@
 #pragma once
 
 #include "PluginState.h"
+#include "ScanJob.h"
 #include "asma/audio/AuditionEngine.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -77,6 +78,9 @@ public:
     void setLinkEnabled(bool on);
     // Proposes a tempo to the Link session (peers may change it again).
     void setLinkTempo(double bpm);
+    // Adding folders and scanning: the standalone only; null in a plugin,
+    // which never writes the library from inside the host.
+    ScanJob* scans() { return scans_.get(); }
 
 private:
     // One preview cache for every instance in the process.
@@ -87,6 +91,7 @@ private:
     std::atomic<double> hostBpm_{0.0};
     const bool standalone_;
     std::unique_ptr<ableton::Link> link_; // standalone only
+    std::unique_ptr<ScanJob> scans_;      // standalone only
     std::atomic<bool> linkOn_{false};
     std::atomic<double> manualBpm_{0.0};
     mutable std::mutex stateMutex_; // hosts may save state off the message thread

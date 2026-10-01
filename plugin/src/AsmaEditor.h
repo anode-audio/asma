@@ -40,6 +40,10 @@ public:
     // The standalone's tempo source; hidden in a plugin.
     juce::ToggleButton& linkToggle() { return link_; }
     juce::Slider& bpmBox() { return bpm_; }
+    juce::TextButton& addFolderButton() { return addFolder_; }
+    // Standalone: adds a sample folder and scans it (the button's chooser
+    // ends here).
+    void addFolder(const std::filesystem::path& folder);
 
 private:
     enum Column { kName = 1, kBpm, kKey, kType, kLength };
@@ -68,6 +72,9 @@ private:
     juce::ToggleButton gainMatch_{"Match loudness"};
     juce::ToggleButton link_{"Ableton Link"};
     juce::Slider bpm_{juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft};
+    juce::TextButton addFolder_{"Add folder..."};
+    std::unique_ptr<juce::FileChooser> chooser_;
+    juce::String scanMessage_; // the last scan's outcome, until the next selection
     juce::TableListBox table_{"results", this};
     juce::Label status_;
     bool quietSelection_ = false; // selection changes that must not play

@@ -153,3 +153,23 @@ TEST_CASE("the standalone shows its tempo controls, a plugin does not", "[editor
     standalone.editor->linkToggle().setToggleState(true, juce::sendNotificationSync);
     CHECK(standalone.p->pluginState().link);
 }
+
+TEST_CASE("the standalone adds a folder and shows the scan in the table", "[editor]")
+{
+    EditorRig plugin;
+    CHECK_FALSE(plugin.editor->addFolderButton().isVisible());
+
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    REQUIRE(rig.editor->addFolderButton().isVisible());
+    const auto more = rig.f.dir.path() / "More";
+    test::writeWavFloat(more / "Pad_Cm.wav", 48000, {test::sine(261.6, 1.0, 0.3, 48000)});
+    // The app would find asma-scan beside itself; the test points at the build's.
+    rig.p->scans()->setWorker(ASMA_SCAN_PATH);
+    rig.editor->addFolder(more);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (rig.p->scans()->busy() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    rig.editor->poll();
+    CHECK(rig.editor->statusText().contains("1 added"));
+    CHECK(rig.editor->table().getNumRows() == 4);
+}

@@ -15,7 +15,11 @@ AsmaProcessor::AsmaProcessor(Mode mode)
       libraryPath_(defaultDataDir() / "library.db"),
       standalone_(mode == Mode::Standalone || wrapperType == wrapperType_Standalone)
 {
-    if (standalone_) link_ = std::make_unique<ableton::Link>(120.0);
+    if (standalone_) {
+        link_ = std::make_unique<ableton::Link>(120.0);
+        const auto app = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        scans_ = std::make_unique<ScanJob>(libraryPath_, ScanJob::workerNextTo(fromUtf8(app.getFullPathName().toStdString())));
+    }
     engine_.loader().start();
 }
 

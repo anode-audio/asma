@@ -49,3 +49,8 @@ target_link_libraries(asma_plugin PRIVATE asma_ui juce::juce_recommended_warning
 clap_juce_extensions_plugin(TARGET asma_plugin
   CLAP_ID "com.anodelabs.asma"
   CLAP_FEATURES instrument sampler)
+
+# The standalone runs asma-scan from beside its own executable.
+add_dependencies(asma_plugin_Standalone asma-scan)
+add_custom_command(TARGET asma_plugin_Standalone POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:asma-scan> $<TARGET_FILE_DIR:asma_plugin_Standalone>)

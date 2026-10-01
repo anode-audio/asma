@@ -35,6 +35,8 @@ if(ASMA_BUILD_PLUGIN)
   target_compile_definitions(asma_plugin_tests PRIVATE
     ASMA_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     ASMA_CLI_PATH="$<TARGET_FILE:asma>"
+    ASMA_SCAN_PATH="$<TARGET_FILE:asma-scan>"
     JUCE_MODAL_LOOPS_PERMITTED=1) # lets a test run the message loop
+  add_dependencies(asma_plugin_tests asma asma-scan)
   catch_discover_tests(asma_plugin_tests)
 endif()
