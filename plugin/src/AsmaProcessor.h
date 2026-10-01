@@ -44,6 +44,7 @@ private:
     // One preview cache for every instance in the process.
     juce::SharedResourcePointer<audio::PreviewCache> cache_;
     audio::AuditionEngine engine_{*cache_};
+    double sampleRate_ = 44100.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AsmaProcessor)
 };

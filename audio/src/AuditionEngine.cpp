@@ -208,6 +208,8 @@ void AuditionEngine::noteOn(int note, float velocity)
 
 void AuditionEngine::noteOff(int note) { voices_.noteOff(note); }
 
+void AuditionEngine::allNotesOff() { voices_.releaseAll(); }
+
 void AuditionEngine::process(float* const* out, int n)
 {
     // Hosts may send more than they announced: work in prepared-size chunks.

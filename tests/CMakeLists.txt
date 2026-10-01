@@ -33,6 +33,7 @@ if(ASMA_BUILD_PLUGIN)
   target_include_directories(asma_plugin_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(asma_plugin_tests PRIVATE asma_ui Catch2::Catch2WithMain)
   target_compile_definitions(asma_plugin_tests PRIVATE
+    ASMA_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     ASMA_CLI_PATH="$<TARGET_FILE:asma>")
   catch_discover_tests(asma_plugin_tests)
 endif()

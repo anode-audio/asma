@@ -10,8 +10,7 @@ target_link_libraries(asma_ui INTERFACE
   juce::juce_audio_utils
   juce::juce_audio_processors
   juce::juce_gui_basics
-  juce::juce_recommended_config_flags
-  juce::juce_recommended_warning_flags)
+  juce::juce_recommended_config_flags)
 target_compile_definitions(asma_ui INTERFACE
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0
@@ -42,7 +41,9 @@ juce_add_plugin(asma_plugin
   LV2URI "https://anode-labs.com/asma"
   BUNDLE_ID com.anodelabs.asma
   FORMATS ${ASMA_FORMATS})
-target_link_libraries(asma_plugin PRIVATE asma_ui)
+# JUCE's warning set for the plugin build; the tests keep Catch2's exact
+# float comparisons, which -Wfloat-equal would flag.
+target_link_libraries(asma_plugin PRIVATE asma_ui juce::juce_recommended_warning_flags)
 
 clap_juce_extensions_plugin(TARGET asma_plugin
   CLAP_ID "com.anodelabs.asma"

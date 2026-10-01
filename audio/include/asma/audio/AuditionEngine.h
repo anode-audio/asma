@@ -71,6 +71,7 @@ public:
     void setTransport(const Transport& transport) { transport_ = transport; }
     void noteOn(int note, float velocity);
     void noteOff(int note);
+    void allNotesOff();
     // Writes n stereo frames; more than maxBlock is fine.
     void process(float* const* out, int n);
 
