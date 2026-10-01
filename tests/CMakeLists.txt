@@ -24,3 +24,15 @@ asma_set_warnings(asma_tests)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
 catch_discover_tests(asma_tests)
+
+if(ASMA_BUILD_PLUGIN)
+  # The JUCE side: the processor and the UI, headless.
+  juce_add_console_app(asma_plugin_tests PRODUCT_NAME "asma plugin tests")
+  file(GLOB ASMA_PLUGIN_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/plugin/*.cpp)
+  target_sources(asma_plugin_tests PRIVATE ${ASMA_PLUGIN_TEST_SOURCES})
+  target_include_directories(asma_plugin_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(asma_plugin_tests PRIVATE asma_ui Catch2::Catch2WithMain)
+  target_compile_definitions(asma_plugin_tests PRIVATE
+    ASMA_CLI_PATH="$<TARGET_FILE:asma>")
+  catch_discover_tests(asma_plugin_tests)
+endif()

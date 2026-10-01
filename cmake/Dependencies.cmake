@@ -68,3 +68,17 @@ endif()
 if(UNIX AND NOT APPLE)
   target_link_libraries(asma_ebur128 PUBLIC m)
 endif()
+
+if(ASMA_BUILD_PLUGIN)
+  # AGPLv3, which suits asma's GPLv3.
+  FetchContent_Declare(juce
+    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+    GIT_TAG be29c81492b6151c8ea8d14c840e1311963b3a83 # 9.0.3
+    GIT_SHALLOW FALSE)
+  # CLAP for JUCE plugins; clones CLAP itself as submodules.
+  FetchContent_Declare(clap_juce_extensions
+    GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+    GIT_TAG 55525c9858d4b25687be7759a5e0f70eccef218e
+    GIT_SHALLOW FALSE)
+  FetchContent_MakeAvailable(juce clap_juce_extensions)
+endif()
