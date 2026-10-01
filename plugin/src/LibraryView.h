@@ -45,6 +45,9 @@ public:
     audio::SampleInfo info(std::int64_t fileId);
     // The file's content hash, or empty when unknown.
     std::string contentHash(std::int64_t fileId);
+    // What the library knows about a file by its path; empty when it is not
+    // in the library (or the library is not open).
+    audio::SampleInfo infoFor(const std::filesystem::path& file);
 
     static std::filesystem::path pathOf(const SearchRow& row);
 

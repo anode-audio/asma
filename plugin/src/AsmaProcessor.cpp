@@ -2,6 +2,7 @@
 #include "AsmaProcessor.h"
 
 #include "AsmaEditor.h"
+#include "LibraryView.h"
 #include "asma/core/Fs.h"
 
 #include <filesystem>
@@ -9,7 +10,8 @@
 namespace asma::app {
 
 AsmaProcessor::AsmaProcessor()
-    : juce::AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
+    : juce::AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+      libraryPath_(defaultDataDir() / "library.db")
 {
     engine_.loader().start();
 }
@@ -40,6 +42,7 @@ void AsmaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             transport.ppq = position->getPpqPosition().orFallback(0.0);
             transport.playing = position->getIsPlaying();
         }
+    hostBpm_.store(transport.bpm, std::memory_order_relaxed);
 
     // Render up to each MIDI event, so a note starts on its own sample and a
     // quantised start still sees the right position.
@@ -84,7 +87,12 @@ void AsmaProcessor::setPluginState(const PluginState& state)
     if (!state.selected.empty()) {
         const auto path = fromUtf8(state.selected);
         std::error_code ec;
-        if (std::filesystem::exists(path, ec)) engine_.select(path, {}, false);
+        // Its tempo and key come from the library, so a restored loop syncs.
+        if (std::filesystem::exists(path, ec)) {
+            LibraryView library(libraryPath_);
+            library.refresh();
+            engine_.select(path, library.infoFor(path), false);
+        }
     }
 }
 

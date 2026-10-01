@@ -74,6 +74,14 @@ std::string LibraryView::contentHash(std::int64_t fileId)
     return file ? file->contentHash : std::string();
 }
 
+audio::SampleInfo LibraryView::infoFor(const std::filesystem::path& file)
+{
+    if (!db_) return {};
+    Library library(*db_);
+    const auto record = library.fileByAbsolutePath(file);
+    return record ? audio::sampleInfo(library, record->id) : audio::SampleInfo{};
+}
+
 std::filesystem::path LibraryView::pathOf(const SearchRow& row)
 {
     return fromUtf8(row.rootPath) / fromUtf8(row.relPath);

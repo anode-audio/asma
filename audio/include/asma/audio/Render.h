@@ -19,7 +19,11 @@ struct RenderSettings {
 
     // Without these the original file is what gets dragged. A sample-rate
     // change alone is not an edit: the DAW converts on import.
-    bool changesAudio() const { return edits.changesAudio() || ratio != 1.0 || semitones != 0.0; }
+    bool changesAudio() const
+    {
+        // Ordered comparisons: the plugin build warns on float == and !=.
+        return edits.changesAudio() || ratio < 1.0 || ratio > 1.0 || semitones < 0.0 || semitones > 0.0;
+    }
 };
 
 // Renders one pass of `source` with the edits baked in, as a 32-bit float WAV

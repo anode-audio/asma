@@ -5,6 +5,8 @@
 #include "asma/audio/AuditionEngine.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <atomic>
+#include <filesystem>
 #include <mutex>
 
 namespace asma::app {
@@ -46,12 +48,27 @@ public:
     // engine and selects the saved sample again, without playing it.
     PluginState pluginState() const;
     void setPluginState(const PluginState& state);
+    // Records what the UI changed; the UI tells the engine itself.
+    template <typename Change>
+    void updateState(Change&& change)
+    {
+        const std::lock_guard lock(stateMutex_);
+        change(state_);
+    }
+
+    // <data dir>/library.db, fixed when the processor is made.
+    const std::filesystem::path& libraryPath() const { return libraryPath_; }
+    // The host's tempo in the last block, 0 when it gave none.
+    double hostBpm() const { return hostBpm_.load(std::memory_order_relaxed); }
+    double sampleRate() const { return sampleRate_; }
 
 private:
     // One preview cache for every instance in the process.
     juce::SharedResourcePointer<audio::PreviewCache> cache_;
     audio::AuditionEngine engine_{*cache_};
     double sampleRate_ = 44100.0;
+    std::filesystem::path libraryPath_;
+    std::atomic<double> hostBpm_{0.0};
     mutable std::mutex stateMutex_; // hosts may save state off the message thread
     PluginState state_;
 
