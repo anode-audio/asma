@@ -2,6 +2,9 @@
 #include "AsmaProcessor.h"
 
 #include "AsmaEditor.h"
+#include "asma/core/Fs.h"
+
+#include <filesystem>
 
 namespace asma::app {
 
@@ -62,9 +65,40 @@ void AsmaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
 
 juce::AudioProcessorEditor* AsmaProcessor::createEditor() { return new AsmaEditor(*this); }
 
-void AsmaProcessor::getStateInformation(juce::MemoryBlock&) {}
+PluginState AsmaProcessor::pluginState() const
+{
+    const std::lock_guard lock(stateMutex_);
+    return state_;
+}
 
-void AsmaProcessor::setStateInformation(const void*, int) {}
+void AsmaProcessor::setPluginState(const PluginState& state)
+{
+    {
+        const std::lock_guard lock(stateMutex_);
+        state_ = state;
+    }
+    engine_.setSync(state.sync);
+    engine_.setGainMatch(state.gainMatch);
+    engine_.setQuantise(state.quantise);
+    engine_.setEdits(state.edits);
+    if (!state.selected.empty()) {
+        const auto path = fromUtf8(state.selected);
+        std::error_code ec;
+        if (std::filesystem::exists(path, ec)) engine_.select(path, {}, false);
+    }
+}
+
+void AsmaProcessor::getStateInformation(juce::MemoryBlock& destData)
+{
+    const std::string json = toJson(pluginState());
+    destData.replaceAll(json.data(), json.size());
+}
+
+void AsmaProcessor::setStateInformation(const void* data, int sizeInBytes)
+{
+    if (!data || sizeInBytes <= 0) return;
+    setPluginState(pluginStateFromJson({static_cast<const char*>(data), static_cast<std::size_t>(sizeInBytes)}));
+}
 
 } // namespace asma::app
 

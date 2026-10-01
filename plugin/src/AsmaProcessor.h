@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include "PluginState.h"
 #include "asma/audio/AuditionEngine.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <mutex>
 
 namespace asma::app {
 
@@ -40,11 +42,18 @@ public:
 
     audio::AuditionEngine& engine() { return engine_; }
 
+    // Any thread but the audio thread. Setting applies the settings to the
+    // engine and selects the saved sample again, without playing it.
+    PluginState pluginState() const;
+    void setPluginState(const PluginState& state);
+
 private:
     // One preview cache for every instance in the process.
     juce::SharedResourcePointer<audio::PreviewCache> cache_;
     audio::AuditionEngine engine_{*cache_};
     double sampleRate_ = 44100.0;
+    mutable std::mutex stateMutex_; // hosts may save state off the message thread
+    PluginState state_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AsmaProcessor)
 };
