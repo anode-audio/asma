@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "TestUtil.h"
+#include "asma/audio/Stretcher.h"
 #include "asma/audio/Sync.h"
 #include "asma/core/Library.h"
 
@@ -30,13 +31,15 @@ SyncSettings host(double bpm)
 
 } // namespace
 
-TEST_CASE("planSync stretches loops to the host tempo, half or double time toward 1", "[sync]")
+TEST_CASE("planSync stretches loops to exactly the host tempo, within the stretcher's range", "[sync]")
 {
     CHECK(planSync(loop(120), host(120)).ratio == 1.0);
     CHECK(planSync(loop(90), host(120)).ratio == Catch::Approx(4.0 / 3.0));
-    CHECK(planSync(loop(70), host(140)).ratio == 1.0);                     // plays at half time
-    CHECK(planSync(loop(180), host(120)).ratio == Catch::Approx(4.0 / 3.0)); // a 90 detected as 180
-    CHECK(planSync(loop(128), host(85)).ratio == Catch::Approx(85.0 * 2 / 128));
+    CHECK(planSync(loop(70), host(140)).ratio == Catch::Approx(2.0));        // no half time
+    CHECK(planSync(loop(120), host(180)).ratio == Catch::Approx(1.5));
+    CHECK(planSync(loop(120), host(60)).ratio == Catch::Approx(0.5));
+    CHECK(planSync(loop(120), host(20)).ratio == Catch::Approx(Stretcher::kMinRatio));  // what plays, not what was asked
+    CHECK(planSync(loop(60), host(300)).ratio == Catch::Approx(Stretcher::kMaxRatio));
     const SyncPlan p = planSync(loop(100), host(120));
     CHECK(p.tempoSynced);
     CHECK_FALSE(p.tempoUnsure);

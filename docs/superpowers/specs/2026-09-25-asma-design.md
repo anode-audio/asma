@@ -259,16 +259,16 @@ contributor ergonomics.
   start from frame 0, a one-shot's own end, or the wrap of an untrimmed forward
   loop. An edit while a sample plays restarts it; switching samples fades the
   old one out first.
-- **Sync:** loops stretch to the current tempo, choosing half or double time
-  when that is closer to the original, and can start on the next beat or bar
-  while the transport plays (optional quantised start). A synced loop follows
-  tempo changes as it plays. Transpose-to-key takes the shortest interval
-  (-6..+5 semitones), to the project's relative key when the modes differ. Sync
-  and transpose only apply at a tempo confidence of 0.3 or a key confidence of
-  0.7 and above (file names and embedded chunks always qualify); below it the
-  sample plays unmodified and shows a "?" badge. The thresholds were measured on
-  labelled libraries. Key sync is off by default: on guitar recordings key
-  detection was unreliable at every confidence.
+- **Sync:** loops stretch to exactly the current tempo, however far that is from
+  the original (within the stretcher's 0.25x to 4x), and can start on the next
+  beat or bar while the transport plays (optional quantised start). A synced
+  loop follows tempo changes as it plays. Transpose-to-key takes the shortest
+  interval (-6..+5 semitones), to the project's relative key when the modes
+  differ. Sync and transpose only apply at a tempo confidence of 0.3 or a key
+  confidence of 0.7 and above (file names and embedded chunks always qualify);
+  below it the sample plays unmodified and shows a "?" badge. The thresholds
+  were measured on labelled libraries. Key sync is off by default: on guitar
+  recordings key detection was unreliable at every confidence.
 - **MIDI:** incoming notes play the selected sample pitched from a root note
   (the `smpl` chunk's, else MIDI note 60, which most DAWs call C3), like a
   classic sampler: speed changes with pitch. Each note plays the trimmed region

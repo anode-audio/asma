@@ -58,11 +58,10 @@ struct SyncPlan {
     bool keyUnsure = false;
 };
 
-// Tempo sync applies to loops only. The ratio is hostBpm / bpm, halved or
-// doubled toward 1, so a loop at 70 plays unchanged at 140 (and a tempo
-// detected an octave off still lands on the grid). The transposition is the
-// shortest interval, -6..+5 semitones, to the project key or, when the modes
-// differ, to its relative key: Am into C stays put.
+// Tempo sync applies to loops only. The ratio is hostBpm / bpm, clamped to
+// the stretcher's range, so a loop at 70 plays twice as fast at 140. The
+// transposition is the shortest interval, -6..+5 semitones, to the project
+// key or, when the modes differ, to its relative key: Am into C stays put.
 SyncPlan planSync(const SampleInfo& info, const SyncSettings& settings);
 
 // Semitones from one canonical key to another, as planSync uses them;

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "asma/audio/Sync.h"
 
+#include "asma/audio/Stretcher.h"
 #include "asma/core/Library.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -51,11 +53,9 @@ SyncPlan planSync(const SampleInfo& info, const SyncSettings& settings)
     SyncPlan plan;
     if (settings.tempo && settings.hostBpm > 0.0 && info.isLoop.value_or(false)) {
         if (info.bpm && *info.bpm > 0.0 && info.bpmConfidence >= kMinTempoConfidence) {
-            double ratio = settings.hostBpm / *info.bpm;
-            // Half or double time toward 1: the loop stays on the grid either way.
-            while (ratio > std::sqrt(2.0)) ratio /= 2.0;
-            while (ratio < 1.0 / std::sqrt(2.0)) ratio *= 2.0;
-            plan.ratio = ratio;
+            // Exactly the host tempo, however far that stretches the loop, up
+            // to what the stretcher plays: the status shows what is heard.
+            plan.ratio = std::clamp(settings.hostBpm / *info.bpm, Stretcher::kMinRatio, Stretcher::kMaxRatio);
             plan.tempoSynced = true;
         } else {
             plan.tempoUnsure = true;
