@@ -38,6 +38,14 @@ jobs:
           else
             ctest --test-dir build --output-on-failure
           fi
+      - name: Validate plugins
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a ci/validate-plugins.sh build
+          else
+            ci/validate-plugins.sh build
+          fi
       - name: Performance (informational)
         continue-on-error: true
         shell: bash
