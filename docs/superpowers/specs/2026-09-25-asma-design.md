@@ -295,8 +295,9 @@ folder"); plan 3c2 builds the layout and looks described here.
   duration, rating), sync toggles.
 - **Centre:** virtualised `TableListBox` (name, type, BPM, key, duration,
   rating, tags); sortable, resizable, fully keyboard driven.
-- **Bottom panel:** waveform with trim handles and playhead, preview controls,
-  and a "Similar" strip showing the 10 nearest neighbours.
+- **Bottom panel:** waveform with trim handles and playhead, preview controls
+  (including a forward / reverse / ping-pong direction switch, which drag-out
+  renders), and a "Similar" strip showing the 10 nearest neighbours.
 - **File operations:** context menu and batch dialogs, always with a preview;
   Ctrl/Cmd+Z undoes.
 - **Problems panel:** files that failed to decode or analyse, with the reason

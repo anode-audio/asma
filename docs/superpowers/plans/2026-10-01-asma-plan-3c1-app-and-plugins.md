@@ -5820,14 +5820,20 @@ Expected: `100% tests passed out of 336`; `search took` under 50 ms; pluginval
 
 ```sh
 export ASMA_DATA_DIR=$(mktemp -d)
-open build/plugin/asma_plugin_artefacts/Release/Standalone/asma.app
+build/plugin/asma_plugin_artefacts/Release/Standalone/asma.app/Contents/MacOS/asma
 ```
+
+(`open` does not hand the app `ASMA_DATA_DIR`; run the binary.) Use a folder
+that holds at least one loop with a known tempo, such as
+`drums_loop_120_bpm.wav`: one-shots and full-length stems never tempo sync.
 
 Expected: "No library yet" in the status line; "Add folder..." on a sample
 folder shows `Scanning n of m`, then `Scan finished: n added`, and the files in
 the table; arrowing through the table plays each sample; with the manual tempo
-changed, a loop follows it; dragging a reversed sample onto the desktop leaves a
-render from `$ASMA_DATA_DIR/renders`.
+changed, the loop follows it exactly (`synced x1.50` at 180 for a 120 loop);
+dragging that synced loop onto the desktop leaves a render from
+`$ASMA_DATA_DIR/renders`. 3c1 has no edit controls, so reverse and trim renders
+are covered by the tests and `asma render`, not by hand.
 
 - [ ] **Step 3: Text rules**
 
