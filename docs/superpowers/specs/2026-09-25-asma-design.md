@@ -250,6 +250,11 @@ contributor ergonomics.
   from a lock-free queue, and a preview is freed only once the audio thread
   reports it no longer plays it (as the selection, the sound fading out, or a
   ringing MIDI voice). The audio thread never allocates.
+- **Overview:** the loader also builds the waveform the UI draws: a min/max pair
+  per channel at 2,048 points over the whole file. A fully decoded file gets it
+  from its buffer at once; a streamed one gets it from a read-through on the
+  loader thread after playback has started, and the UI draws it when it is
+  complete. Nothing is stored in the library.
 - **Chain:** trim, direction (forward, reverse, ping-pong), resampling to the
   output rate, time-stretch and pitch-shift (Signalsmith Stretch, pre-rolled so
   the first frame still comes out first), LUFS-based gain matching (to -16 LUFS,
@@ -266,7 +271,8 @@ contributor ergonomics.
   interval (-6..+5 semitones), to the project's relative key when the modes
   differ. Sync and transpose only apply at a tempo confidence of 0.3 or a key
   confidence of 0.7 and above (file names and embedded chunks always qualify);
-  below it the sample plays unmodified and shows a "?" badge. The thresholds
+  below it the sample plays unmodified and shows a "?" badge. The plan says when
+  the ratio was clamped to 0.25x or 4x, so the UI can say so. The thresholds
   were measured on labelled libraries. Key sync is off by default: on guitar
   recordings key detection was unreliable at every confidence.
 - **MIDI:** incoming notes play the selected sample pitched from a root note
@@ -288,20 +294,81 @@ Native JUCE, dark theme by default, palette values copied from the Anode
 identity. Plan 3c1 ships a plain browser with the behaviour below that already
 works (search, audition as the selection moves, sync switches, a status line
 with the "?" badge, drag-out, and in the standalone the tempo source and "Add
-folder"); plan 3c2 builds the layout and looks described here.
+folder"). Plan 3c2a builds the layout, the looks and the audition controls; plan
+3c2b fills in the organising parts (sidebar, facet chips, ratings, tags and
+favourites, the Similar strip, the Problems panel).
 
-- **Left sidebar:** roots, collections, saved searches, favourites.
-- **Top bar:** search field, facet chips (type, BPM range, key, instrument,
-  duration, rating), sync toggles.
-- **Centre:** virtualised `TableListBox` (name, type, BPM, key, duration,
-  rating, tags); sortable, resizable, fully keyboard driven.
-- **Bottom panel:** waveform with trim handles and playhead, preview controls
-  (including a forward / reverse / ping-pong direction switch, which drag-out
-  renders), and a "Similar" strip showing the 10 nearest neighbours.
-- **File operations:** context menu and batch dialogs, always with a preview;
-  Ctrl/Cmd+Z undoes.
-- **Problems panel:** files that failed to decode or analyse, with the reason
-  and a retry action.
+The approved design (a design canvas, private to the author) is recorded in the
+repository as `tests/ui/reference/main.png`: its main artboard with the 3c2b
+areas blanked. The editor is built to match it.
+
+- **Left sidebar (3c2b):** All samples, Favourites, folders (roots),
+  collections, saved searches, and a Problems entry with a count at the foot.
+- **Top bar:** the asma mark, the search field with a result count, and on the
+  right the tempo source: in the standalone the Link switch, the BPM box and
+  "Add folder…"; in a plugin the host's tempo, read-only ("host 124.0 BPM").
+- **Chip row (3c2b):** facet chips (type, BPM range, key, instrument, duration,
+  rating) and "Save search", between the top bar and the table.
+- **Centre:** virtualised `TableListBox` (favourite, name, type, BPM, key,
+  length, rating, tags); sortable, resizable, fully keyboard driven. When there
+  is no library, or it is outdated or unreadable, the table area says so (with
+  "Add folder…" in the standalone) instead of a status line.
+- **Bottom panel:** the selected file's name and format line; the waveform with
+  trim handles, the trimmed-off parts dimmed and a playhead; and the preview
+  controls: play/stop, a direction switch (forward, reverse, ping-pong), loop
+  mode (auto, on, off), "Reset edits", and chips for Tempo, Key (with the
+  project key), Match loudness and Start (quantise). The "Similar" list (3c2b)
+  takes the panel's right side, the 10 nearest neighbours.
+- **Footer:** what a drag-out carries ("the original file", or e.g. "reversed,
+  trimmed, stretched to 180 BPM"), the scan's progress and outcome, the kept
+  renders' size and "Clear renders".
+- **File operations (plan 4):** context menu and batch dialogs, always with a
+  preview; Ctrl/Cmd+Z undoes.
+- **Problems panel (3c2b):** files that failed to decode or analyse, with the
+  reason and a retry action.
+
+### Look
+
+`Theme` holds the Anode values: grounds `#0b0c0e`, `#111316`, `#15171a`, raised
+`#1c1f23`, borders `#2a2d33`, text `#e8e9eb` and muted `#8a8f98`; filament amber
+`#e8a33d` only for what is active or selected (the selected row's bar, trim
+handles, pressed switches); oscilloscope cyan `#4fd1e6` for the waveform; signal
+green `#7de38e` only for a synced tempo. Space Grotesk for headings and section
+labels, Inter for text, JetBrains Mono for numbers, all three embedded (SIL
+OFL). 4 px corners, 8 px on cards. A custom `LookAndFeel` and a few components
+(waveform, segmented switch, chip) carry it; there is no web view.
+
+### Tempo chip
+
+The chip says what tempo sync does to the selected sample, and why when it does
+nothing:
+
+| Case                    | Chip                       | Colour |
+| ----------------------- | -------------------------- | ------ |
+| loop, synced            | `120 → 180 · x1.50`        | green  |
+| loop, at 0.25x or 4x    | `120 → 30 · x0.25 max`     | amber  |
+| loop, tempo below 0.3   | `~97 ? · plays as is`      | amber  |
+| one-shot                | `one-shot · plays as is`   | muted  |
+| no loop verdict (stems) | `not a loop · plays as is` | muted  |
+| tempo sync switched off | `off`                      | muted  |
+| file cannot be read     | `can't read this file`     | amber  |
+
+### Editing in the preview
+
+- Edits (trim, direction, loop mode) belong to the selected sample: selecting
+  another sample resets them, so moving through the list always plays each
+  sample as it is. The project saves the selected sample's edits and restores
+  them with it. Changing an edit restarts the sound.
+- Trim handles drag the start and end, at least 10 ms apart; double-clicking a
+  handle resets it. Clicking the waveform plays from the trimmed start; there is
+  no click-to-seek.
+- Space plays and stops; the arrow keys and Return work as in 3c1.
+
+### Window
+
+Resizable, 1100×720 by default and at least 900×600; the size is saved with the
+project. The table takes the extra room; the top bar and bottom panel keep their
+height.
 
 ### Drag out
 
@@ -343,6 +410,9 @@ without playing, with its tempo and key from the library.
 - **File operation failure mid-group:** execution stops, the group is left
   partially `done`, and the user is offered undo of the completed part.
 - **Trash unavailable:** delete refused, no fallback.
+- **Loader failure:** anything a preview load throws, not only a probe error,
+  marks that preview failed ("can't read this file" in the Tempo chip); the
+  loader thread carries on with the next selection.
 
 ## 11. Build and dependencies
 
@@ -379,6 +449,11 @@ core, the audio engine, the CLI and the scanner build without JUCE.
   asserting results.
 - **Plugin tests:** the processor and editor run headless in a JUCE console app
   (MIDI timing, host transport, state, the browser, drag-out, scanning).
+- **UI fidelity:** a headless test renders the editor at 1280×800 with fixed
+  demo data and compares it with `tests/ui/reference/main.png` (the approved
+  design, 3c2b areas blanked), failing above a set mismatch. It runs on macOS
+  only, since font rendering differs between systems; the behaviour tests run
+  everywhere.
 - **Plugin validation:** pluginval at strictness 10 (VST3 everywhere, AU on
   macOS) and clap-validator (CLAP) in CI on all three platforms.
   clap-validator's `param-conversions` test is skipped: it divides by the
