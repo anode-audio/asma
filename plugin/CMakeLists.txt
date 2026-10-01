@@ -7,6 +7,7 @@ target_sources(asma_ui INTERFACE ${ASMA_UI_SOURCES})
 target_include_directories(asma_ui INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(asma_ui INTERFACE
   asma::audio
+  Ableton::Link
   juce::juce_audio_utils
   juce::juce_audio_processors
   juce::juce_gui_basics

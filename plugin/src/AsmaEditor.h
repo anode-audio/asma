@@ -37,6 +37,9 @@ public:
     juce::TableListBox& table() { return table_; }
     juce::TextEditor& searchBox() { return search_; }
     juce::String statusText() const { return status_.getText(); }
+    // The standalone's tempo source; hidden in a plugin.
+    juce::ToggleButton& linkToggle() { return link_; }
+    juce::Slider& bpmBox() { return bpm_; }
 
 private:
     enum Column { kName = 1, kBpm, kKey, kType, kLength };
@@ -63,6 +66,8 @@ private:
     juce::ToggleButton keySync_{"Key sync"};
     juce::ComboBox projectKey_;
     juce::ToggleButton gainMatch_{"Match loudness"};
+    juce::ToggleButton link_{"Ableton Link"};
+    juce::Slider bpm_{juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft};
     juce::TableListBox table_{"results", this};
     juce::Label status_;
     bool quietSelection_ = false; // selection changes that must not play

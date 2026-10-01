@@ -5,14 +5,17 @@
 #include "LibraryView.h"
 #include "asma/core/Fs.h"
 
+#include <ableton/Link.hpp>
 #include <filesystem>
 
 namespace asma::app {
 
-AsmaProcessor::AsmaProcessor()
+AsmaProcessor::AsmaProcessor(Mode mode)
     : juce::AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      libraryPath_(defaultDataDir() / "library.db")
+      libraryPath_(defaultDataDir() / "library.db"),
+      standalone_(mode == Mode::Standalone || wrapperType == wrapperType_Standalone)
 {
+    if (standalone_) link_ = std::make_unique<ableton::Link>(120.0);
     engine_.loader().start();
 }
 
@@ -36,7 +39,17 @@ void AsmaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
     audio::Transport transport;
-    if (auto* head = getPlayHead())
+    if (standalone_) {
+        if (linkOn_.load(std::memory_order_relaxed)) {
+            // Capturing the audio session state is real-time safe.
+            const auto session = link_->captureAudioSessionState();
+            transport.bpm = session.tempo();
+            transport.ppq = session.beatAtTime(link_->clock().micros(), 4.0);
+            transport.playing = session.isPlaying();
+        } else {
+            transport.bpm = manualBpm_.load(std::memory_order_relaxed);
+        }
+    } else if (auto* head = getPlayHead())
         if (const auto position = head->getPosition()) {
             transport.bpm = position->getBpm().orFallback(0.0);
             transport.ppq = position->getPpqPosition().orFallback(0.0);
@@ -80,6 +93,9 @@ void AsmaProcessor::setPluginState(const PluginState& state)
         const std::lock_guard lock(stateMutex_);
         state_ = state;
     }
+    manualBpm_.store(state.sync.hostBpm, std::memory_order_relaxed);
+    if (link_) link_->enable(state.link);
+    linkOn_.store(standalone_ && state.link, std::memory_order_relaxed);
     engine_.setSync(state.sync);
     engine_.setGainMatch(state.gainMatch);
     engine_.setQuantise(state.quantise);
@@ -94,6 +110,32 @@ void AsmaProcessor::setPluginState(const PluginState& state)
             engine_.select(path, library.infoFor(path), false);
         }
     }
+}
+
+void AsmaProcessor::setManualBpm(double bpm)
+{
+    audio::SyncSettings sync;
+    updateState([&](PluginState& s) {
+        s.sync.hostBpm = bpm;
+        sync = s.sync;
+    });
+    manualBpm_.store(bpm, std::memory_order_relaxed);
+    engine_.setSync(sync); // a tempo change alone does not restart playback
+}
+
+void AsmaProcessor::setLinkEnabled(bool on)
+{
+    updateState([&](PluginState& s) { s.link = on; });
+    if (link_) link_->enable(on);
+    linkOn_.store(standalone_ && on, std::memory_order_relaxed);
+}
+
+void AsmaProcessor::setLinkTempo(double bpm)
+{
+    if (!link_) return;
+    auto session = link_->captureAppSessionState();
+    session.setTempo(bpm, link_->clock().micros());
+    link_->commitAppSessionState(session);
 }
 
 void AsmaProcessor::getStateInformation(juce::MemoryBlock& destData)

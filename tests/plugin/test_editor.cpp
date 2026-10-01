@@ -20,10 +20,10 @@ struct EditorRig {
     const juce::ScopedJuceInitialiser_GUI gui;
     std::unique_ptr<AsmaProcessor> p;
     std::unique_ptr<AsmaEditor> editor;
-    EditorRig()
+    explicit EditorRig(AsmaProcessor::Mode mode = AsmaProcessor::Mode::FromWrapper)
     {
         f.scan();
-        p = std::make_unique<AsmaProcessor>();
+        p = std::make_unique<AsmaProcessor>(mode);
         p->prepareToPlay(48000.0, 512);
         editor.reset(dynamic_cast<AsmaEditor*>(p->createEditorAndMakeActive()));
         REQUIRE(editor);
@@ -137,4 +137,19 @@ TEST_CASE("a restored project's loop syncs as it did", "[editor]")
     p.processBlock(buffer, midi);
     CHECK(p.engine().status().tempoSynced); // 120 from the library, stretched to 90
     p.setPlayHead(nullptr);
+}
+
+TEST_CASE("the standalone shows its tempo controls, a plugin does not", "[editor]")
+{
+    EditorRig plugin;
+    CHECK_FALSE(plugin.editor->linkToggle().isVisible());
+    CHECK_FALSE(plugin.editor->bpmBox().isVisible());
+
+    EditorRig standalone(AsmaProcessor::Mode::Standalone);
+    REQUIRE(standalone.editor->linkToggle().isVisible());
+    REQUIRE(standalone.editor->bpmBox().isVisible());
+    standalone.editor->bpmBox().setValue(126.0, juce::sendNotificationSync);
+    CHECK(standalone.p->pluginState().sync.hostBpm == 126.0);
+    standalone.editor->linkToggle().setToggleState(true, juce::sendNotificationSync);
+    CHECK(standalone.p->pluginState().link);
 }

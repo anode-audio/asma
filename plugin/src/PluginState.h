@@ -16,6 +16,7 @@ struct PluginState {
     std::string selected; // UTF-8 path; empty when nothing is selected
     SearchModel search;
     audio::SyncSettings sync; // hostBpm: the standalone's manual tempo
+    bool link = false;        // the standalone follows Ableton Link
     bool gainMatch = true;
     double quantise = 0.0; // beats; 0 is off
     audio::Edits edits;    // of the selected sample

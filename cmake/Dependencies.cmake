@@ -80,5 +80,17 @@ if(ASMA_BUILD_PLUGIN)
     GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
     GIT_TAG 55525c9858d4b25687be7759a5e0f70eccef218e
     GIT_SHALLOW FALSE)
-  FetchContent_MakeAvailable(juce clap_juce_extensions)
+  # Tempo sync for the standalone; GPLv2 or later.
+  FetchContent_Declare(ableton_link
+    GIT_REPOSITORY https://github.com/Ableton/link.git
+    GIT_TAG 9c9091275e707ab09d09a5a608fcdb84bf0dec85 # Link-4.1
+    GIT_SHALLOW FALSE
+    SOURCE_SUBDIR _none)
+  FetchContent_MakeAvailable(juce clap_juce_extensions ableton_link)
+  # Link's config sets CMAKE_CXX_STANDARD to 17; a function keeps that out of
+  # our scope, while the Ableton::Link target it defines stays global.
+  function(asma_add_ableton_link)
+    include(${ableton_link_SOURCE_DIR}/AbletonLinkConfig.cmake)
+  endfunction()
+  asma_add_ableton_link()
 endif()

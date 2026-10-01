@@ -39,6 +39,7 @@ std::string toJson(const PluginState& s)
         .boolean("key_sync", s.sync.key)
         .str("project_key", s.sync.projectKey.view())
         .real("manual_bpm", s.sync.hostBpm)
+        .boolean("link", s.link)
         .boolean("gain_match", s.gainMatch)
         .real("quantise", s.quantise)
         .real("trim_start", s.edits.trimStart)
@@ -80,6 +81,7 @@ PluginState pluginStateFromJson(std::string_view json)
     if (const auto x = flag("key_sync")) s.sync.key = *x;
     if (const auto* x = text("project_key"); x && audio::keyInterval(*x, "C")) s.sync.projectKey = audio::KeyName(*x);
     if (const auto x = number("manual_bpm"); x && *x >= 0.0 && *x <= 999.0) s.sync.hostBpm = *x;
+    if (const auto x = flag("link")) s.link = *x;
     if (const auto x = flag("gain_match")) s.gainMatch = *x;
     if (const auto x = number("quantise"); x && *x >= 0.0 && *x <= 64.0) s.quantise = *x;
     if (const auto x = number("trim_start"); x && *x >= 0.0) s.edits.trimStart = *x;

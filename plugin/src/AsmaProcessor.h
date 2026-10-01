@@ -7,7 +7,12 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <atomic>
 #include <filesystem>
+#include <memory>
 #include <mutex>
+
+namespace ableton {
+class Link;
+}
 
 namespace asma::app {
 
@@ -15,7 +20,10 @@ namespace asma::app {
 // whose audio is the audition engine's.
 class AsmaProcessor : public juce::AudioProcessor {
 public:
-    AsmaProcessor();
+    // FromWrapper: whatever JUCE's wrapper says; Standalone forces the
+    // standalone's behaviour, for tests.
+    enum class Mode { FromWrapper, Standalone };
+    explicit AsmaProcessor(Mode mode = Mode::FromWrapper);
     ~AsmaProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
@@ -62,6 +70,14 @@ public:
     double hostBpm() const { return hostBpm_.load(std::memory_order_relaxed); }
     double sampleRate() const { return sampleRate_; }
 
+    // The standalone has no host: its tempo is Ableton Link's when Link is
+    // on, else the manual tempo. A plugin keeps these but uses the host's.
+    bool isStandalone() const { return standalone_; }
+    void setManualBpm(double bpm);
+    void setLinkEnabled(bool on);
+    // Proposes a tempo to the Link session (peers may change it again).
+    void setLinkTempo(double bpm);
+
 private:
     // One preview cache for every instance in the process.
     juce::SharedResourcePointer<audio::PreviewCache> cache_;
@@ -69,6 +85,10 @@ private:
     double sampleRate_ = 44100.0;
     std::filesystem::path libraryPath_;
     std::atomic<double> hostBpm_{0.0};
+    const bool standalone_;
+    std::unique_ptr<ableton::Link> link_; // standalone only
+    std::atomic<bool> linkOn_{false};
+    std::atomic<double> manualBpm_{0.0};
     mutable std::mutex stateMutex_; // hosts may save state off the message thread
     PluginState state_;
 

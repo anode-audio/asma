@@ -46,6 +46,20 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     projectKey_.onChange = [this] { syncChanged(); };
     addAndMakeVisible(projectKey_);
 
+    if (processor_.isStandalone()) {
+        bpm_.setRange(20.0, 300.0, 0.1);
+        bpm_.setValue(state.sync.hostBpm > 0.0 ? state.sync.hostBpm : 120.0, juce::dontSendNotification);
+        bpm_.setTextValueSuffix(" BPM");
+        bpm_.onValueChange = [this] {
+            processor_.setManualBpm(bpm_.getValue());
+            if (link_.getToggleState()) processor_.setLinkTempo(bpm_.getValue());
+        };
+        link_.setToggleState(state.link, juce::dontSendNotification);
+        link_.onClick = [this] { processor_.setLinkEnabled(link_.getToggleState()); };
+        addAndMakeVisible(bpm_);
+        addAndMakeVisible(link_);
+    }
+
     auto& header = table_.getHeader();
     header.addColumn("Name", kName, 320);
     header.addColumn("BPM", kBpm, 70);
@@ -80,6 +94,11 @@ void AsmaEditor::resized()
     for (juce::Component* c : {static_cast<juce::Component*>(&tempoSync_), static_cast<juce::Component*>(&keySync_),
                                static_cast<juce::Component*>(&projectKey_), static_cast<juce::Component*>(&gainMatch_)})
         c->setBounds(top.removeFromLeft(top.getWidth() / 4).reduced(4, 2));
+    if (processor_.isStandalone()) {
+        auto row = area.removeFromTop(28);
+        bpm_.setBounds(row.removeFromLeft(180).reduced(0, 2));
+        link_.setBounds(row.removeFromLeft(140).reduced(4, 2));
+    }
     status_.setBounds(area.removeFromBottom(24));
     table_.setBounds(area.reduced(0, 4));
     processor_.updateState([&](PluginState& s) {
