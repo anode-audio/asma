@@ -58,3 +58,17 @@ TEST_CASE("a plugin ignores the standalone's tempo settings", "[standalone]")
     block(p);
     CHECK(p.hostBpm() == 0.0); // no play head, no host tempo
 }
+
+TEST_CASE("a fresh standalone plays at the tempo it shows", "[standalone]")
+{
+    AsmaProcessor p(AsmaProcessor::Mode::Standalone); // no saved state at all
+    p.prepareToPlay(48000.0, 512);
+    block(p);
+    CHECK(p.hostBpm() == 120.0);
+    CHECK(p.pluginState().sync.hostBpm == 120.0);
+
+    asma::app::PluginState old; // a state without a manual tempo
+    p.setPluginState(old);
+    block(p);
+    CHECK(p.hostBpm() == 120.0);
+}

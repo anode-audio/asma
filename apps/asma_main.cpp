@@ -201,7 +201,8 @@ int cmdRender(Args& args, Db& db)
         sync.hostBpm = toDouble(*v, "--tempo");
     }
     if (const auto v = args.option("key")) {
-        const auto key = parseKeyToken(*v);
+        auto key = canonicalKey(*v);
+        if (!key) key = parseKeyToken(*v);
         if (!key) throw UsageError("not a key: " + *v);
         sync.key = true;
         sync.projectKey = audio::KeyName(*key);

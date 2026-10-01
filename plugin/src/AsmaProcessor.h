@@ -57,6 +57,8 @@ public:
     // engine and selects the saved sample again, without playing it.
     PluginState pluginState() const;
     void setPluginState(const PluginState& state);
+    // Counts setPluginState calls, so an open editor can tell it must reload.
+    std::uint64_t stateLoads() const { return stateLoads_.load(); }
     // Records what the UI changed; the UI tells the engine itself.
     template <typename Change>
     void updateState(Change&& change)
@@ -92,10 +94,12 @@ private:
     const bool standalone_;
     std::unique_ptr<ableton::Link> link_; // standalone only
     std::unique_ptr<ScanJob> scans_;      // standalone only
+    static constexpr double kDefaultBpm = 120.0; // the standalone's tempo until set
     std::atomic<bool> linkOn_{false};
     std::atomic<double> manualBpm_{0.0};
     mutable std::mutex stateMutex_; // hosts may save state off the message thread
     PluginState state_;
+    std::atomic<std::uint64_t> stateLoads_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AsmaProcessor)
 };

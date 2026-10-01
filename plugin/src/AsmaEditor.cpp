@@ -23,22 +23,17 @@ juce::String bpmText(const std::optional<double>& bpm)
 } // namespace
 
 AsmaEditor::AsmaEditor(AsmaProcessor& owner)
-    : juce::AudioProcessorEditor(owner), processor_(owner), library_(owner.libraryPath())
+    : juce::AudioProcessorEditor(owner), processor_(owner),
+      library_(owner.libraryPath(), owner.isStandalone() ? LibraryView::Access::MayMigrate : LibraryView::Access::ReadOnly)
 {
     const PluginState state = processor_.pluginState();
 
     search_.setTextToShowWhenEmpty("Search samples", juce::Colours::grey);
-    search_.setText(state.search.text, false);
     search_.onTextChange = [this] { searchChanged(); };
     addAndMakeVisible(search_);
 
-    tempoSync_.setToggleState(state.sync.tempo, juce::dontSendNotification);
-    keySync_.setToggleState(state.sync.key, juce::dontSendNotification);
-    gainMatch_.setToggleState(state.gainMatch, juce::dontSendNotification);
     for (int i = 0; i < static_cast<int>(std::size(kKeys)); ++i) projectKey_.addItem(kKeys[i], i + 1);
     projectKey_.setTextWhenNothingSelected("Project key");
-    for (int i = 0; i < static_cast<int>(std::size(kKeys)); ++i)
-        if (state.sync.projectKey.view() == kKeys[i]) projectKey_.setSelectedId(i + 1, juce::dontSendNotification);
     for (auto* b : {&tempoSync_, &keySync_, &gainMatch_}) {
         b->onClick = [this] { syncChanged(); };
         addAndMakeVisible(*b);
@@ -48,13 +43,11 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
 
     if (processor_.isStandalone()) {
         bpm_.setRange(20.0, 300.0, 0.1);
-        bpm_.setValue(state.sync.hostBpm > 0.0 ? state.sync.hostBpm : 120.0, juce::dontSendNotification);
         bpm_.setTextValueSuffix(" BPM");
         bpm_.onValueChange = [this] {
             processor_.setManualBpm(bpm_.getValue());
             if (link_.getToggleState()) processor_.setLinkTempo(bpm_.getValue());
         };
-        link_.setToggleState(state.link, juce::dontSendNotification);
         link_.onClick = [this] { processor_.setLinkEnabled(link_.getToggleState()); };
         addAndMakeVisible(bpm_);
         addAndMakeVisible(link_);
@@ -81,14 +74,33 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     status_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(status_);
 
-    browser_.setSearch(state.search);
     setResizable(true, true);
     setResizeLimits(600, 400, 8000, 8000);
     setSize(state.width, state.height);
     setWantsKeyboardFocus(true);
+    loadState();
     poll();
-    showSelection();
     startTimerHz(5);
+}
+
+void AsmaEditor::loadState()
+{
+    loadedStates_ = processor_.stateLoads();
+    const PluginState state = processor_.pluginState();
+    search_.setText(state.search.text, false);
+    tempoSync_.setToggleState(state.sync.tempo, juce::dontSendNotification);
+    keySync_.setToggleState(state.sync.key, juce::dontSendNotification);
+    gainMatch_.setToggleState(state.gainMatch, juce::dontSendNotification);
+    projectKey_.setSelectedId(0, juce::dontSendNotification);
+    for (int i = 0; i < static_cast<int>(std::size(kKeys)); ++i)
+        if (state.sync.projectKey.view() == kKeys[i]) projectKey_.setSelectedId(i + 1, juce::dontSendNotification);
+    if (processor_.isStandalone()) {
+        bpm_.setValue(state.sync.hostBpm > 0.0 ? state.sync.hostBpm : 120.0, juce::dontSendNotification);
+        link_.setToggleState(state.link, juce::dontSendNotification);
+    }
+    browser_.setSearch(state.search);
+    table_.updateContent();
+    showSelection();
 }
 
 AsmaEditor::~AsmaEditor() { stopTimer(); }
@@ -138,6 +150,8 @@ void AsmaEditor::addFolder(const std::filesystem::path& folder)
 
 void AsmaEditor::poll()
 {
+    // A host or preset menu loaded state while the window was open.
+    if (processor_.stateLoads() != loadedStates_) loadState();
     if (ScanJob* scans = processor_.scans())
         if (const auto report = scans->takeReport()) {
             using Result = ScanReport::Result;
@@ -186,7 +200,12 @@ void AsmaEditor::syncChanged()
 
 void AsmaEditor::showSelection()
 {
-    const int row = browser_.rowOf(fromUtf8(processor_.pluginState().selected));
+    int row = -1;
+    try {
+        row = browser_.rowOf(fromUtf8(processor_.pluginState().selected));
+    } catch (const std::exception&) {
+        // A saved path that is not valid UTF-8 selects nothing.
+    }
     const juce::ScopedValueSetter quiet(quietSelection_, true);
     if (row >= 0) table_.selectRow(row);
     else table_.deselectAllRows();

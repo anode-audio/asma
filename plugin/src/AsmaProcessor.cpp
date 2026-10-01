@@ -16,7 +16,10 @@ AsmaProcessor::AsmaProcessor(Mode mode)
       standalone_(mode == Mode::Standalone || wrapperType == wrapperType_Standalone)
 {
     if (standalone_) {
-        link_ = std::make_unique<ableton::Link>(120.0);
+        // Plays at the tempo its BPM field shows from the first launch.
+        state_.sync.hostBpm = kDefaultBpm;
+        manualBpm_.store(kDefaultBpm, std::memory_order_relaxed);
+        link_ = std::make_unique<ableton::Link>(kDefaultBpm);
         const auto app = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
         scans_ = std::make_unique<ScanJob>(libraryPath_, ScanJob::workerNextTo(fromUtf8(app.getFullPathName().toStdString())));
     }
@@ -91,12 +94,15 @@ PluginState AsmaProcessor::pluginState() const
     return state_;
 }
 
-void AsmaProcessor::setPluginState(const PluginState& state)
+void AsmaProcessor::setPluginState(const PluginState& given)
 {
+    PluginState state = given;
+    if (standalone_ && state.sync.hostBpm <= 0.0) state.sync.hostBpm = kDefaultBpm; // a state that never set one
     {
         const std::lock_guard lock(stateMutex_);
         state_ = state;
     }
+    stateLoads_.fetch_add(1);
     manualBpm_.store(state.sync.hostBpm, std::memory_order_relaxed);
     if (link_) link_->enable(state.link);
     linkOn_.store(standalone_ && state.link, std::memory_order_relaxed);
@@ -105,7 +111,12 @@ void AsmaProcessor::setPluginState(const PluginState& state)
     engine_.setQuantise(state.quantise);
     engine_.setEdits(state.edits);
     if (!state.selected.empty()) {
-        const auto path = fromUtf8(state.selected);
+        std::filesystem::path path;
+        try {
+            path = fromUtf8(state.selected); // throws on Windows for bytes that are not UTF-8
+        } catch (const std::exception&) {
+            return;
+        }
         std::error_code ec;
         // Its tempo and key come from the library, so a restored loop syncs.
         if (std::filesystem::exists(path, ec)) {
@@ -151,7 +162,11 @@ void AsmaProcessor::getStateInformation(juce::MemoryBlock& destData)
 void AsmaProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     if (!data || sizeInBytes <= 0) return;
-    setPluginState(pluginStateFromJson({static_cast<const char*>(data), static_cast<std::size_t>(sizeInBytes)}));
+    // Whatever a damaged project holds must not escape into the host.
+    try {
+        setPluginState(pluginStateFromJson({static_cast<const char*>(data), static_cast<std::size_t>(sizeInBytes)}));
+    } catch (const std::exception&) {
+    }
 }
 
 } // namespace asma::app

@@ -27,7 +27,10 @@ enum class LibraryState {
 // thread only.
 class LibraryView {
 public:
-    explicit LibraryView(std::filesystem::path dbPath);
+    // ReadOnly inside a host. The standalone may migrate an older library
+    // (opening it once as a writer), since nobody else would.
+    enum class Access { ReadOnly, MayMigrate };
+    explicit LibraryView(std::filesystem::path dbPath, Access access = Access::ReadOnly);
     ~LibraryView();
 
     // Opens the library when it is not open yet; cheap enough for a UI timer,
@@ -52,7 +55,15 @@ public:
     static std::filesystem::path pathOf(const SearchRow& row);
 
 private:
+    // Runs a query; an error (a corrupt page, an I/O error, a writer holding
+    // the database past the busy timeout) closes the library and gives
+    // `fallback`, so a broken library never throws into the host. The next
+    // refresh() tries to open it again.
+    template <typename Query, typename Result>
+    Result guarded(Query&& query, Result fallback);
+
     std::filesystem::path path_;
+    Access access_;
     LibraryState state_ = LibraryState::Missing;
     std::optional<Db> db_;
     std::unique_ptr<ChangeWatcher> watcher_;

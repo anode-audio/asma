@@ -124,3 +124,41 @@ TEST_CASE("LibraryView explains a library it cannot read", "[libview]")
     LibraryView broken(junk);
     CHECK(broken.refresh() == LibraryState::Unreadable);
 }
+
+TEST_CASE("LibraryView gives up quietly on a library that breaks while open", "[libview]")
+{
+    Fixture f;
+    const auto loopId = f.scan();
+    LibraryView view(f.dbPath);
+    REQUIRE(view.refresh() == LibraryState::Open);
+    REQUIRE(view.search({}).size() == 2);
+    // Corrupt the file under the open connection, as a failing disk would.
+    for (const char* suffix : {"-wal", "-shm"}) fs::remove(fs::path(f.dbPath.string() + suffix));
+    test::writeBytes(f.dbPath, std::string(8192, 'x'));
+
+    CHECK_NOTHROW(view.changed());
+    CHECK(view.search({}).empty());
+    CHECK(view.state() == LibraryState::Unreadable);
+    CHECK_NOTHROW(view.info(loopId));
+    CHECK(view.contentHash(loopId).empty());
+    CHECK_NOTHROW(view.infoFor(f.lib / "Loops" / "Bass_Loop_Am_120.wav"));
+    CHECK_FALSE(view.message().empty());
+}
+
+TEST_CASE("the standalone updates an older library; a plugin only says so", "[libview]")
+{
+    TempDir dir;
+    const auto dbPath = dir.path() / "library.db";
+    {
+        Db old = Db::openInMemory(2); // the schema before plan 3a
+        old.exec("INSERT INTO roots(id, path) VALUES (1, '/Samples')");
+        old.exec("VACUUM INTO '" + toUtf8(dbPath) + "'");
+    }
+    LibraryView plugin(dbPath);
+    CHECK(plugin.refresh() == LibraryState::Outdated);
+
+    LibraryView standalone(dbPath, LibraryView::Access::MayMigrate);
+    CHECK(standalone.refresh() == LibraryState::Open);
+    CHECK(standalone.changed());
+    CHECK(plugin.refresh() == LibraryState::Open); // the plugin reads the updated library too
+}

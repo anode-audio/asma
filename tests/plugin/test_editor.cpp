@@ -173,3 +173,26 @@ TEST_CASE("the standalone adds a folder and shows the scan in the table", "[edit
     CHECK(rig.editor->statusText().contains("1 added"));
     CHECK(rig.editor->table().getNumRows() == 4);
 }
+
+TEST_CASE("loading state with the editor open updates it, and old settings stay gone", "[editor]")
+{
+    EditorRig rig;
+    app::PluginState loaded = rig.p->pluginState();
+    loaded.search.text = "snare";
+    loaded.sync.tempo = false;
+    loaded.gainMatch = false;
+    const std::string json = app::toJson(loaded);
+    rig.p->setStateInformation(json.data(), static_cast<int>(json.size())); // e.g. a preset menu
+    rig.editor->poll();
+    CHECK(rig.editor->searchBox().getText() == "snare");
+    CHECK(rig.editor->table().getNumRows() == 1);
+    CHECK_FALSE(rig.editor->tempoSyncToggle().getToggleState());
+    CHECK_FALSE(rig.editor->gainMatchToggle().getToggleState());
+
+    rig.editor->keySyncToggle().setToggleState(true, juce::sendNotificationSync);
+    const app::PluginState after = rig.p->pluginState();
+    CHECK(after.sync.key);
+    CHECK_FALSE(after.sync.tempo); // not written back from the editor's old view
+    CHECK_FALSE(after.gainMatch);
+    CHECK(after.search.text == "snare");
+}

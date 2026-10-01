@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "PluginState.h"
+#include "LibraryFixture.h"
 #include "PluginTestUtil.h"
 #include "asma/core/Fs.h"
 
@@ -8,6 +9,7 @@
 using namespace asma;
 using app::PluginState;
 using asma::test::TempDir;
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -111,4 +113,26 @@ TEST_CASE("the processor saves its state and a restore reselects the sample", "[
     app::AsmaProcessor d; // garbage from a broken host
     d.setStateInformation("\xff\x00junk", 6);
     CHECK(d.pluginState().gainMatch == true);
+}
+
+TEST_CASE("restoring a project over a broken library does not take the host down", "[state]")
+{
+    test::LibraryFixture f;
+    f.scan();
+    // Keep the first page, which opening reads, and break the rest, which the
+    // lookup of the restored sample reads: it opens, then fails.
+    for (const char* suffix : {"-wal", "-shm"}) fs::remove(fs::path(f.dbPath.string() + suffix));
+    const auto size = fs::file_size(f.dbPath);
+    {
+        std::fstream db(f.dbPath, std::ios::in | std::ios::out | std::ios::binary);
+        db.seekp(4096);
+        const std::string junk(static_cast<std::size_t>(size) - 4096, 'x');
+        db.write(junk.data(), static_cast<std::streamsize>(junk.size()));
+    }
+    app::AsmaProcessor p;
+    PluginState s;
+    s.selected = toUtf8(f.loop);
+    const std::string json = app::toJson(s);
+    CHECK_NOTHROW(p.setStateInformation(json.data(), static_cast<int>(json.size())));
+    CHECK(p.pluginState().selected == s.selected);
 }

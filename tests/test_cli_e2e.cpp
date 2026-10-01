@@ -327,6 +327,7 @@ TEST_CASE("asma render prints the file to drag", "[e2e]")
 
     CHECK(cli.runAsma("render " + quote(kick) + " --reverse --ping-pong").exitCode == 2);
     CHECK(cli.runAsma("render " + quote(kick) + " --key Q").exitCode == 2);
+    CHECK(cli.runAsma("render " + quote(kick) + " --key C" + cache).exitCode == 0); // a plain major key
     CHECK(cli.runAsma("render " + quote(cli.lib / "gone.wav") + " --reverse" + cache).exitCode == 1);
     CHECK(cli.runAsma("render " + quote(kick) + " --rate 10" + cache).exitCode == 2);
     CHECK(cli.runAsma("render " + quote(kick) + " --rate 44100.5" + cache).exitCode == 2);

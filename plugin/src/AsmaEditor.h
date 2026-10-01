@@ -37,6 +37,9 @@ public:
     juce::TableListBox& table() { return table_; }
     juce::TextEditor& searchBox() { return search_; }
     juce::String statusText() const { return status_.getText(); }
+    juce::ToggleButton& tempoSyncToggle() { return tempoSync_; }
+    juce::ToggleButton& keySyncToggle() { return keySync_; }
+    juce::ToggleButton& gainMatchToggle() { return gainMatch_; }
     // The standalone's tempo source; hidden in a plugin.
     juce::ToggleButton& linkToggle() { return link_; }
     juce::Slider& bpmBox() { return bpm_; }
@@ -60,6 +63,7 @@ private:
     void searchChanged();
     void syncChanged();
     void showSelection(); // selects the saved file's row without playing it
+    void loadState();     // every control from the processor's state
     void updateStatus();
 
     AsmaProcessor& processor_;
@@ -78,6 +82,7 @@ private:
     juce::TableListBox table_{"results", this};
     juce::Label status_;
     bool quietSelection_ = false; // selection changes that must not play
+    std::uint64_t loadedStates_ = 0; // the processor's stateLoads() the controls show
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AsmaEditor)
 };
