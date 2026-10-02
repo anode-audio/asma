@@ -20,6 +20,8 @@ public:
     const std::vector<SearchRow>& rows() const { return rows_; }
     // Samples in the library, whatever the search: "48 of 585".
     std::int64_t total() const { return total_; }
+    // Samples the search matches; rows() may hold only the first page of them.
+    std::int64_t matches() const { return matches_; }
 
     // Opens the library if it has appeared and re-runs the search when it
     // changed. Returns whether the rows may have changed.
@@ -41,6 +43,7 @@ private:
     SearchModel model_;
     std::vector<SearchRow> rows_;
     std::int64_t total_ = 0;
+    std::int64_t matches_ = 0;
 };
 
 } // namespace asma::app

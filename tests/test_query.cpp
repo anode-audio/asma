@@ -80,6 +80,17 @@ TEST_CASE("an empty model lists every ok file by name, case-insensitively", "[qu
     CHECK(ids(search(s.db, {})) == Ids{s.bassLoop, s.kick, s.flacHit, s.padLoop, s.snare});
 }
 
+TEST_CASE("countSearch counts every match, past the page the search returns", "[query]")
+{
+    Seeded s;
+    SearchModel page;
+    page.limit = 2;
+    CHECK(search(s.db, page).size() == 2);
+    CHECK(countSearch(s.db, page) == 5);
+    page.text = "kick";
+    CHECK(countSearch(s.db, page) == 2);
+}
+
 TEST_CASE("text search prefix-matches names, folders and tags", "[query]")
 {
     Seeded s;

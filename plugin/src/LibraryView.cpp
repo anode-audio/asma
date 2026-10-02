@@ -82,6 +82,11 @@ std::vector<SearchRow> LibraryView::search(const SearchModel& model)
     return guarded([&] { return asma::search(*db_, model); }, std::vector<SearchRow>{});
 }
 
+std::int64_t LibraryView::matchCount(const SearchModel& model)
+{
+    return guarded([&] { return asma::countSearch(*db_, model); }, std::int64_t{0});
+}
+
 std::int64_t LibraryView::sampleCount()
 {
     return guarded(

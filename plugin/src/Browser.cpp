@@ -8,6 +8,7 @@ void Browser::setSearch(SearchModel model)
     model_ = std::move(model);
     rows_ = library_.search(model_);
     total_ = library_.sampleCount();
+    matches_ = library_.matchCount(model_);
 }
 
 bool Browser::poll()
@@ -16,6 +17,7 @@ bool Browser::poll()
     if (!library_.changed()) return false;
     rows_ = library_.search(model_);
     total_ = library_.sampleCount();
+    matches_ = library_.matchCount(model_);
     return true;
 }
 

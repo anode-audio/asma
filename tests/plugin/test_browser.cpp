@@ -24,10 +24,16 @@ TEST_CASE("Browser searches as the model changes", "[browser]")
     browser.setSearch(m);
     REQUIRE(browser.rows().size() == 1);
     CHECK(browser.total() == 3); // "1 of 3"
+    CHECK(browser.matches() == 1);
     CHECK(fs::equivalent(browser.path(0), f.kick));
     CHECK(browser.searchModel().text == "kick");
     CHECK(browser.contentHash(0).size() == 16);
     CHECK(browser.path(5).empty()); // out of range
+    SearchModel page;
+    page.limit = 2; // the table shows a page; the count is of everything that matches
+    browser.setSearch(page);
+    CHECK(browser.rows().size() == 2);
+    CHECK(browser.matches() == 3);
 }
 
 TEST_CASE("Browser picks up a library that appears and changes later", "[browser]")

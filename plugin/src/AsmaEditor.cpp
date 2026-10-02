@@ -314,7 +314,7 @@ void AsmaEditor::updateReadouts()
     const bool current = status.generation == processor_.engine().selected(); // the status is the selection's
 
     // The top bar.
-    top_.setCount(static_cast<int>(browser_.rows().size()), static_cast<int>(browser_.total()));
+    top_.setCount(static_cast<int>(browser_.matches()), static_cast<int>(browser_.total()));
     if (!processor_.isStandalone()) top_.setHostBpm(processor_.hostBpm());
 
     // The table, or what it says instead.

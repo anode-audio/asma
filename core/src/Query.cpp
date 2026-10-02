@@ -147,18 +147,27 @@ SqlQuery buildSearchSql(const SearchModel& m)
     return q;
 }
 
-std::vector<SearchRow> search(Db& db, const SearchModel& model)
+namespace {
+
+void bindAll(Statement& s, const std::vector<SqlParam>& params)
 {
-    const SqlQuery q = buildSearchSql(model);
-    Statement s = db.prepare(q.sql);
-    for (std::size_t i = 0; i < q.params.size(); ++i) {
+    for (std::size_t i = 0; i < params.size(); ++i) {
         const int index = static_cast<int>(i) + 1;
         std::visit([&](const auto& value) {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<T, std::string>) s.bind(index, std::string_view(value));
             else s.bind(index, value);
-        }, q.params[i]);
+        }, params[i]);
     }
+}
+
+} // namespace
+
+std::vector<SearchRow> search(Db& db, const SearchModel& model)
+{
+    const SqlQuery q = buildSearchSql(model);
+    Statement s = db.prepare(q.sql);
+    bindAll(s, q.params);
 
     std::vector<SearchRow> rows;
     while (s.step()) rows.push_back(readRow(s));
@@ -269,6 +278,18 @@ std::optional<SearchModel> searchModelFromJson(std::string_view json)
             if (name == *v->asString()) m.sort = field;
     if (const auto* v = doc.get("desc")) m.descending = v->asBool().value_or(false);
     return m;
+}
+
+std::int64_t countSearch(Db& db, const SearchModel& model)
+{
+    // The search's own filter, without its order and page: buildSearchSql
+    // ends with " ORDER BY ... LIMIT ? OFFSET ?" and those two parameters.
+    SqlQuery q = buildSearchSql(model);
+    q.sql.erase(q.sql.rfind(" ORDER BY "));
+    q.params.resize(q.params.size() - 2);
+    Statement s = db.prepare("SELECT COUNT(*) FROM (" + q.sql + ")");
+    bindAll(s, q.params);
+    return s.step() ? s.getInt(0) : 0;
 }
 
 } // namespace asma

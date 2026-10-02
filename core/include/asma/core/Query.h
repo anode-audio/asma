@@ -62,6 +62,8 @@ std::string ftsMatchExpression(std::string_view text);
 
 SqlQuery buildSearchSql(const SearchModel& model);
 std::vector<SearchRow> search(Db& db, const SearchModel& model);
+// Every file the model matches, whatever its limit and offset.
+std::int64_t countSearch(Db& db, const SearchModel& model);
 
 // The model as one JSON object, for saved searches and plugin state. Paging
 // (limit, offset) is view state and is left out; so are default values.

@@ -47,6 +47,8 @@ public:
     std::vector<SearchRow> search(const SearchModel& model);
     // Every sample a search could find: readable files in enabled folders. 0 unless open.
     std::int64_t sampleCount();
+    // What the model matches, past the page search() returns. 0 unless open.
+    std::int64_t matchCount(const SearchModel& model);
     audio::SampleInfo info(std::int64_t fileId);
     // The file's content hash, or empty when unknown.
     std::string contentHash(std::int64_t fileId);
