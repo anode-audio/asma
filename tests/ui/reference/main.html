@@ -1,0 +1,153 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- The approved design's main artboard (a private design canvas, "asma 3c2a UI"),
+     filled with tests/plugin/test_ui_fidelity.cpp's demo library, with the
+     areas plan 3c2b fills (sidebar, chip row, Similar, the favourite, rating
+     and tags columns) left blank. See README.md beside it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>asma reference</title>
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../../plugin/fonts/Inter-Regular.ttf"); }
+@font-face { font-family: "Inter"; font-weight: 500; src: url("../../../plugin/fonts/Inter-Medium.ttf"); }
+@font-face { font-family: "Inter"; font-weight: 600; src: url("../../../plugin/fonts/Inter-SemiBold.ttf"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../../plugin/fonts/JetBrainsMono-Regular.ttf"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 600; src: url("../../../plugin/fonts/SpaceGrotesk-SemiBold.ttf"); }
+* { box-sizing: border-box; }
+body { margin: 0; background: #15171a; }
+button { font: inherit; color: inherit; }
+.app { width: 1280px; height: 800px; display: flex; flex-direction: column; background: #15171a; color: #e8e9eb;
+  font-family: Inter, sans-serif; font-size: 13px; overflow: hidden; }
+header { height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 16px;
+  border-bottom: 1px solid #2a2d33; background: #111316; }
+.brand { display: flex; align-items: center; gap: 10px; width: 188px; }
+.word { font-family: "Space Grotesk"; font-weight: 600; font-size: 18px; letter-spacing: 0.06em; }
+.search { width: 520px; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  border: 1px solid #2a2d33; border-radius: 4px; background: #0b0c0e; }
+.search .q { flex-grow: 1; }
+.mono { font-family: "JetBrains Mono"; }
+.muted { color: #8a8f98; }
+.count { font-family: "JetBrains Mono"; font-size: 11px; color: #8a8f98; }
+.spacer { flex-grow: 1; }
+.right { display: flex; align-items: center; gap: 8px; }
+.chip { height: 30px; padding: 0 10px; border: 1px solid #2a2d33; border-radius: 4px; background: transparent;
+  color: #8a8f98; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ring { width: 8px; height: 8px; border-radius: 4px; border: 1.5px solid #8a8f98; }
+.dot { width: 8px; height: 8px; border-radius: 4px; }
+.tempo { width: 140px; height: 30px; display: flex; align-items: center; border: 1px solid #2a2d33; border-radius: 4px; background: #0b0c0e; }
+.tempo button { width: 26px; height: 28px; border: 0; background: transparent; color: #8a8f98; }
+.tempo .v { flex-grow: 1; text-align: center; font-family: "JetBrains Mono"; font-size: 13px; }
+.tempo .u { width: 34px; font-size: 11px; color: #8a8f98; }
+.add { width: 104px; height: 30px; border: 1px solid #2a2d33; border-radius: 4px; background: #1c1f23; }
+.middle { flex-grow: 1; display: flex; min-height: 0; }
+nav { width: 220px; flex-shrink: 0; border-right: 1px solid #2a2d33; background: #111316; }
+main { flex-grow: 1; display: flex; flex-direction: column; min-width: 0; }
+.chips { height: 44px; flex-shrink: 0; border-bottom: 1px solid #2a2d33; }
+.head, .row { height: 30px; display: grid; grid-template-columns: minmax(0, 1fr) 76px 70px 56px 72px; align-items: center; }
+.head { border-bottom: 1px solid #2a2d33; font-family: "Space Grotesk"; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; color: #8a8f98; }
+.row { border-bottom: 1px solid #1c1f23; }
+.row .mono { font-size: 12px; }
+.head span:first-child, .row .name { padding-left: 14px; }
+.row.sel { background: rgba(232,163,61,0.10); box-shadow: inset 2px 0 0 #e8a33d; }
+.preview { height: 236px; flex-shrink: 0; border-top: 1px solid #2a2d33; background: #111316; display: flex; }
+.pleft { flex-grow: 1; min-width: 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+.title { height: 20px; display: flex; align-items: baseline; gap: 12px; }
+.fname { font-family: "Space Grotesk"; font-weight: 600; font-size: 15px; }
+.fline { font-family: "JetBrains Mono"; font-size: 11px; color: #8a8f98; }
+.wave { position: relative; flex-grow: 1; border-radius: 4px; background: #0b0c0e; border: 1px solid #2a2d33; overflow: hidden; }
+.bars { position: absolute; inset: 6px 0; display: flex; align-items: center; gap: 1px; padding: 0 2px; }
+.bars span { flex-grow: 1; background: #3aa3b5; border-radius: 1px; }
+.dim { position: absolute; top: 0; bottom: 0; background: rgba(11,12,14,0.55); }
+.handle { position: absolute; top: 0; bottom: 0; width: 2px; background: #e8a33d; }
+.tab { position: absolute; top: 0; width: 12px; height: 12px; background: #e8a33d; border-radius: 0 0 3px 3px; }
+.tlabel { position: absolute; bottom: 4px; font-family: "JetBrains Mono"; font-size: 10px; color: #e8a33d; }
+.controls { height: 28px; display: flex; align-items: center; gap: 10px; }
+.play { width: 32px; height: 28px; border: 1px solid #2a2d33; border-radius: 4px; background: #111316;
+  display: flex; align-items: center; justify-content: center; }
+.seg { display: flex; border: 1px solid #2a2d33; border-radius: 4px; overflow: hidden; font-size: 12px; }
+.seg button { height: 26px; padding: 0 10px; border: 0; background: transparent; color: #8a8f98; }
+.seg button + button { border-left: 1px solid #2a2d33; }
+.seg .on { background: #e8a33d; color: #0b0c0e; font-weight: 600; }
+.seg .lift { background: #1c1f23; color: #e8e9eb; }
+.quiet { height: 28px; padding: 0 9px; border: 1px solid #2a2d33; border-radius: 4px; background: transparent; color: #8a8f98; font-size: 12px; }
+.sep { width: 1px; height: 22px; background: #2a2d33; }
+.pchip { height: 28px; padding: 0 10px; border: 1px solid #2a2d33; border-radius: 4px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.pchip.on { background: #1c1f23; }
+.pchip.off { color: #8a8f98; }
+.pchip .d { font-family: "JetBrains Mono"; font-size: 11px; }
+aside { width: 284px; flex-shrink: 0; border-left: 1px solid #2a2d33; }
+footer { height: 26px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 16px;
+  border-top: 1px solid #2a2d33; background: #0b0c0e; font-family: "JetBrains Mono"; font-size: 11px; color: #8a8f98; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 22 22"><path d="M17.4 4.6 A9 9 0 1 0 19.8 9.2" fill="none" stroke="#e8a33d" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <span class="word">asma</span>
+    </div>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4.5" fill="none" stroke="#8a8f98" stroke-width="1.5"/><path d="M9.5 9.5 L13 13" stroke="#8a8f98" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span class="q">bass loop</span>
+      <span class="count">13</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="right">
+      <div class="chip"><span class="ring"></span>Link</div>
+      <div class="tempo"><button>&#8722;</button><span class="v">180.0</span><span class="u">BPM</span><button>+</button></div>
+      <button class="add">Add folder&#8230;</button>
+    </div>
+  </header>
+  <div class="middle">
+    <nav></nav>
+    <main>
+      <div class="chips"></div>
+      <div class="head"><span>NAME</span><span>TYPE</span><span>BPM</span><span>KEY</span><span>LENGTH</span></div>
+      <div class="row"><span class="name">Bass_Loop_132_rolling.wav</span><span class="muted">loop</span><span class="mono">132</span><span class="mono"></span><span class="mono muted">7.27 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_A#m_128_wobble.wav</span><span class="muted">loop</span><span class="mono">128</span><span class="mono">A#m</span><span class="mono muted">7.50 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_A#m_130.wav</span><span class="muted">loop</span><span class="mono">130</span><span class="mono">A#m</span><span class="mono muted">7.38 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_Am_118.wav</span><span class="muted">loop</span><span class="mono">118</span><span class="mono">Am</span><span class="mono muted">8.14 s</span></div>
+      <div class="row sel"><span class="name">Bass_Loop_Am_120.wav</span><span class="muted">loop</span><span class="mono">120</span><span class="mono">Am</span><span class="mono muted">8.00 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_Am_130_acid.wav</span><span class="muted">loop</span><span class="mono">130</span><span class="mono">Am</span><span class="mono muted">7.38 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_C_126_fingered.wav</span><span class="muted">loop</span><span class="mono">126</span><span class="mono"></span><span class="mono muted">7.62 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_Cm_126_wet.wav</span><span class="muted">loop</span><span class="mono">126</span><span class="mono">Cm</span><span class="mono muted">7.62 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_Dm_120_dusty.wav</span><span class="muted">loop</span><span class="mono">120</span><span class="mono">Dm</span><span class="mono muted">4.00 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_Em_124.wav</span><span class="muted">loop</span><span class="mono">124</span><span class="mono">Em</span><span class="mono muted">3.87 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_F_124_sub.wav</span><span class="muted">loop</span><span class="mono">124</span><span class="mono"></span><span class="mono muted">7.74 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_Fm_128.wav</span><span class="muted">loop</span><span class="mono">128</span><span class="mono">Fm</span><span class="mono muted">3.75 s</span></div>
+      <div class="row"><span class="name">Bass_Loop_Gm_122.wav</span><span class="muted">loop</span><span class="mono">122</span><span class="mono">Gm</span><span class="mono muted">7.87 s</span></div>
+    </main>
+  </div>
+  <section class="preview">
+    <div class="pleft">
+      <div class="title"><span class="fname">Bass_Loop_Am_120.wav</span><span class="fline">Loops &#183; 8 kHz &#183; mono &#183; 8.00 s</span></div>
+      <div class="wave">
+        <div class="bars"><span style="height:88px"></span><span style="height:77px"></span><span style="height:68px"></span><span style="height:58px"></span><span style="height:47px"></span><span style="height:37px"></span><span style="height:33px"></span><span style="height:34px"></span><span style="height:37px"></span><span style="height:37px"></span><span style="height:29px"></span><span style="height:19px"></span><span style="height:12px"></span><span style="height:13px"></span><span style="height:20px"></span><span style="height:26px"></span><span style="height:26px"></span><span style="height:20px"></span><span style="height:13px"></span><span style="height:10px"></span><span style="height:12px"></span><span style="height:16px"></span><span style="height:17px"></span><span style="height:83px"></span><span style="height:70px"></span><span style="height:61px"></span><span style="height:55px"></span><span style="height:49px"></span><span style="height:40px"></span><span style="height:31px"></span><span style="height:26px"></span><span style="height:26px"></span><span style="height:31px"></span><span style="height:33px"></span><span style="height:30px"></span><span style="height:20px"></span><span style="height:12px"></span><span style="height:9px"></span><span style="height:15px"></span><span style="height:22px"></span><span style="height:25px"></span><span style="height:22px"></span><span style="height:15px"></span><span style="height:10px"></span><span style="height:10px"></span><span style="height:87px"></span><span style="height:77px"></span><span style="height:67px"></span><span style="height:57px"></span><span style="height:49px"></span><span style="height:45px"></span><span style="height:41px"></span><span style="height:36px"></span><span style="height:28px"></span><span style="height:21px"></span><span style="height:20px"></span><span style="height:25px"></span><span style="height:30px"></span><span style="height:29px"></span><span style="height:22px"></span><span style="height:13px"></span><span style="height:8px"></span><span style="height:10px"></span><span style="height:18px"></span><span style="height:24px"></span><span style="height:23px"></span><span style="height:17px"></span><span style="height:11px"></span><span style="height:77px"></span><span style="height:67px"></span><span style="height:61px"></span><span style="height:54px"></span><span style="height:47px"></span><span style="height:40px"></span><span style="height:37px"></span><span style="height:35px"></span><span style="height:32px"></span><span style="height:26px"></span><span style="height:19px"></span><span style="height:16px"></span><span style="height:19px"></span><span style="height:25px"></span><span style="height:28px"></span><span style="height:24px"></span><span style="height:15px"></span><span style="height:8px"></span><span style="height:7px"></span><span style="height:14px"></span><span style="height:21px"></span><span style="height:24px"></span><span style="height:88px"></span><span style="height:74px"></span><span style="height:60px"></span><span style="height:52px"></span><span style="height:49px"></span><span style="height:45px"></span><span style="height:39px"></span><span style="height:34px"></span><span style="height:31px"></span><span style="height:30px"></span><span style="height:29px"></span><span style="height:25px"></span><span style="height:18px"></span><span style="height:13px"></span><span style="height:14px"></span><span style="height:21px"></span><span style="height:26px"></span><span style="height:26px"></span><span style="height:18px"></span><span style="height:10px"></span><span style="height:6px"></span><span style="height:10px"></span><span style="height:17px"></span><span style="height:88px"></span><span style="height:77px"></span><span style="height:62px"></span><span style="height:49px"></span><span style="height:41px"></span><span style="height:39px"></span><span style="height:37px"></span><span style="height:33px"></span><span style="height:29px"></span><span style="height:26px"></span><span style="height:26px"></span><span style="height:27px"></span><span style="height:24px"></span><span style="height:18px"></span><span style="height:12px"></span><span style="height:11px"></span><span style="height:16px"></span><span style="height:23px"></span><span style="height:26px"></span><span style="height:21px"></span><span style="height:12px"></span><span style="height:6px"></span><span style="height:81px"></span><span style="height:75px"></span><span style="height:71px"></span><span style="height:64px"></span><span style="height:53px"></span><span style="height:41px"></span><span style="height:34px"></span><span style="height:31px"></span><span style="height:30px"></span><span style="height:29px"></span><span style="height:25px"></span><span style="height:23px"></span><span style="height:23px"></span><span style="height:24px"></span><span style="height:23px"></span><span style="height:19px"></span><span style="height:13px"></span><span style="height:9px"></span><span style="height:12px"></span><span style="height:19px"></span><span style="height:25px"></span><span style="height:23px"></span><span style="height:16px"></span><span style="height:75px"></span><span style="height:61px"></span><span style="height:56px"></span><span style="height:56px"></span><span style="height:54px"></span><span style="height:46px"></span><span style="height:36px"></span><span style="height:28px"></span><span style="height:25px"></span><span style="height:25px"></span><span style="height:25px"></span><span style="height:23px"></span><span style="height:20px"></span><span style="height:20px"></span><span style="height:22px"></span><span style="height:23px"></span><span style="height:20px"></span><span style="height:14px"></span><span style="height:9px"></span><span style="height:9px"></span><span style="height:15px"></span><span style="height:23px"></span></div>
+        <div class="dim" style="left: 0; width: 9.5%"></div>
+        <div class="dim" style="right: 0; width: 15%"></div>
+        <div class="handle" style="left: 9.5%"></div><div class="tab" style="left: calc(9.5% - 5px)"></div>
+        <div class="handle" style="right: 15%"></div><div class="tab" style="right: calc(15% - 5px)"></div>
+        <span class="tlabel" style="left: calc(9.5% + 6px)">0.76 s</span>
+        <span class="tlabel" style="right: calc(15% + 6px)">6.80 s</span>
+      </div>
+      <div class="controls">
+        <div class="play"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 0 L2 12 L12 6 Z" fill="#e8e9eb"/></svg></div>
+        <div class="seg"><button>&#8594;</button><button class="on">&#8592;</button><button>&#8596;</button></div>
+        <div class="seg"><button class="lift">Loop auto</button><button>On</button><button>Off</button></div>
+        <button class="quiet">Reset edits</button>
+        <div class="sep"></div>
+        <div class="pchip on"><span class="dot" style="background:#7de38e"></span>Tempo<span class="d" style="color:#7de38e">120 &#8594; 180 &#183; x1.50</span></div>
+        <div class="pchip off"><span class="ring"></span>Key<span class="d">off</span></div>
+        <div class="pchip on"><span class="dot" style="background:#e8a33d"></span>Match loudness</div>
+        <div class="pchip off"><span class="ring"></span>Start<span class="d">now</span></div>
+      </div>
+    </div>
+    <aside></aside>
+  </section>
+  <footer><span>Drag out renders: reversed, trimmed, stretched to 180 BPM</span><span></span></footer>
+</div>
+</body>
+</html>

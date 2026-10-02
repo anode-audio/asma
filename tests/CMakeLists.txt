@@ -34,6 +34,7 @@ if(ASMA_BUILD_PLUGIN)
   target_link_libraries(asma_plugin_tests PRIVATE asma_ui Catch2::Catch2WithMain)
   target_compile_definitions(asma_plugin_tests PRIVATE
     ASMA_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    ASMA_TEST_UI="${CMAKE_CURRENT_SOURCE_DIR}/ui"
     ASMA_CLI_PATH="$<TARGET_FILE:asma>"
     ASMA_SCAN_PATH="$<TARGET_FILE:asma-scan>"
     JUCE_MODAL_LOOPS_PERMITTED=1) # lets a test run the message loop
