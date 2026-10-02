@@ -2,10 +2,20 @@
 # asma_ui holds the app's own JUCE code. It is an INTERFACE library so the
 # plugin and the plugin tests each compile it, and JUCE, once.
 add_library(asma_ui INTERFACE)
-file(GLOB ASMA_UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB ASMA_UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp)
 target_sources(asma_ui INTERFACE ${ASMA_UI_SOURCES})
 target_include_directories(asma_ui INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# The Anode fonts (SIL OFL, licences beside them), compiled in.
+juce_add_binary_data(asma_fonts NAMESPACE AsmaFonts HEADER_NAME AsmaFonts.h SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Inter-Regular.ttf
+  ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Inter-Medium.ttf
+  ${CMAKE_CURRENT_SOURCE_DIR}/fonts/Inter-SemiBold.ttf
+  ${CMAKE_CURRENT_SOURCE_DIR}/fonts/JetBrainsMono-Regular.ttf
+  ${CMAKE_CURRENT_SOURCE_DIR}/fonts/SpaceGrotesk-SemiBold.ttf)
+set_target_properties(asma_fonts PROPERTIES POSITION_INDEPENDENT_CODE ON) # the LV2 plugin is a shared library
+
 target_link_libraries(asma_ui INTERFACE
+  asma_fonts
   asma::audio
   Ableton::Link
   juce::juce_audio_utils

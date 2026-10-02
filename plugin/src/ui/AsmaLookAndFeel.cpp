@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#include "ui/AsmaLookAndFeel.h"
+
+#include "ui/Theme.h"
+
+namespace asma::app {
+
+AsmaLookAndFeel::AsmaLookAndFeel()
+{
+    using namespace theme;
+    setColourScheme({surface, panel, ground, border, text, raised, ground, amber, text});
+    setColour(juce::ResizableWindow::backgroundColourId, surface);
+    setColour(juce::TextButton::buttonColourId, raised);
+    setColour(juce::TextButton::buttonOnColourId, raised);
+    setColour(juce::TextButton::textColourOffId, text);
+    setColour(juce::TextButton::textColourOnId, text);
+    setColour(juce::TextEditor::backgroundColourId, ground);
+    setColour(juce::TextEditor::textColourId, text);
+    setColour(juce::TextEditor::outlineColourId, border);
+    setColour(juce::TextEditor::focusedOutlineColourId, border);
+    setColour(juce::TextEditor::highlightColourId, amber.withAlpha(0.3f));
+    setColour(juce::CaretComponent::caretColourId, amber);
+    setColour(juce::ListBox::backgroundColourId, surface);
+    setColour(juce::ListBox::textColourId, text);
+    setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
+    setColour(juce::TableHeaderComponent::backgroundColourId, surface);
+    setColour(juce::TableHeaderComponent::textColourId, muted);
+    setColour(juce::TableHeaderComponent::outlineColourId, border);
+    setColour(juce::ScrollBar::thumbColourId, border);
+    setColour(juce::Label::textColourId, text);
+    setColour(juce::PopupMenu::backgroundColourId, panel);
+    setColour(juce::PopupMenu::textColourId, text);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, raised);
+    setColour(juce::PopupMenu::highlightedTextColourId, text);
+    setColour(juce::Slider::textBoxTextColourId, text);
+    setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+    setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+}
+
+juce::Typeface::Ptr AsmaLookAndFeel::getTypefaceForFont(const juce::Font& font)
+{
+    if (font.getTypefaceName() == juce::Font::getDefaultSansSerifFontName()) return theme::typeface(theme::Face::Text);
+    if (font.getTypefaceName() == juce::Font::getDefaultMonospacedFontName()) return theme::typeface(theme::Face::Mono);
+    return LookAndFeel_V4::getTypefaceForFont(font);
+}
+
+juce::Font AsmaLookAndFeel::getTextButtonFont(juce::TextButton&, int) { return theme::font(theme::Face::Text, 13.0f); }
+
+void AsmaLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour&, bool highlighted,
+                                           bool down)
+{
+    const auto& props = button.getProperties();
+    const auto segment = props["asma.segment"].toString();
+    const bool on = button.getToggleState();
+    juce::Colour fill = theme::raised;
+    if (on && props["asma.accent"]) fill = theme::amber;
+    else if (!on && (props["asma.quiet"] || button.getClickingTogglesState())) fill = juce::Colours::transparentBlack;
+    if (highlighted || down) fill = fill.isTransparent() ? theme::raised.withAlpha(0.6f) : fill.brighter(0.06f);
+
+    auto r = button.getLocalBounds().toFloat();
+    if (segment.isEmpty()) {
+        r = r.reduced(0.5f);
+        g.setColour(fill);
+        g.fillRoundedRectangle(r, theme::kRadius);
+        g.setColour(theme::border);
+        g.drawRoundedRectangle(r, theme::kRadius, 1.0f);
+        return;
+    }
+    // Inside a segmented switch the group draws the frame; a segment draws
+    // its fill and the line that parts it from the one before.
+    g.setColour(fill);
+    g.fillRect(r);
+    if (segment == "middle" || segment == "last") {
+        g.setColour(theme::border);
+        g.fillRect(r.withWidth(1.0f));
+    }
+}
+
+void AsmaLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool)
+{
+    const auto& props = button.getProperties();
+    const bool on = button.getToggleState();
+    const bool accent = on && props["asma.accent"];
+    const bool quiet = !on && (props["asma.quiet"] || button.getClickingTogglesState());
+    const float size = props.contains("asma.size") ? static_cast<float>(props["asma.size"]) : 13.0f;
+    g.setFont(theme::font(accent ? theme::Face::SemiBold : theme::Face::Text, size));
+    g.setColour(accent ? theme::ground : (quiet ? theme::muted : theme::text));
+    g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(6, 0), juce::Justification::centred, 1);
+}
+
+void AsmaLookAndFeel::drawTableHeaderBackground(juce::Graphics& g, juce::TableHeaderComponent& header)
+{
+    g.fillAll(theme::surface);
+    g.setColour(theme::border);
+    g.fillRect(0, header.getHeight() - 1, header.getWidth(), 1);
+}
+
+void AsmaLookAndFeel::drawTableHeaderColumn(juce::Graphics& g, juce::TableHeaderComponent&, const juce::String& name,
+                                            int, int width, int height, bool, bool, int)
+{
+    g.setFont(theme::font(theme::Face::Heading, 11.0f).withExtraKerningFactor(0.06f));
+    g.setColour(theme::muted);
+    g.drawText(name.toUpperCase(), 0, 0, width, height - 1, juce::Justification::centredLeft, true);
+}
+
+void AsmaLookAndFeel::drawScrollbar(juce::Graphics& g, juce::ScrollBar&, int x, int y, int width, int height, bool vertical,
+                                    int thumbStart, int thumbSize, bool mouseOver, bool mouseDown)
+{
+    const auto thumb = vertical ? juce::Rectangle<int>(x, thumbStart, width, thumbSize)
+                                : juce::Rectangle<int>(thumbStart, y, thumbSize, height);
+    g.setColour(mouseOver || mouseDown ? theme::faint : theme::border);
+    g.fillRoundedRectangle(thumb.toFloat().reduced(3.0f), 2.0f);
+}
+
+void AsmaLookAndFeel::fillTextEditorBackground(juce::Graphics& g, int width, int height, juce::TextEditor&)
+{
+    g.setColour(theme::ground);
+    g.fillRoundedRectangle(juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)),
+                           theme::kRadius);
+}
+
+void AsmaLookAndFeel::drawTextEditorOutline(juce::Graphics& g, int width, int height, juce::TextEditor&)
+{
+    g.setColour(theme::border);
+    g.drawRoundedRectangle(juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width) - 1.0f, static_cast<float>(height) - 1.0f),
+                           theme::kRadius, 1.0f);
+}
+
+} // namespace asma::app
