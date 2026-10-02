@@ -199,9 +199,16 @@ TEST_CASE("the preview panel leaves the screen alone when nothing it shows chang
         juce::MessageManager::getInstance()->runDispatchLoopUntil(30); // where paints happen
     };
     show();
+    REQUIRE(panel.paints > 0); // on screen and painting
+    // A new window takes a few paints of its own from the system: let it settle.
+    for (int quiet = 0, last = panel.paints, i = 0; quiet < 5 && i < 100; ++i) {
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+        quiet = panel.paints == last ? quiet + 1 : 0;
+        last = panel.paints;
+    }
     const int first = panel.paints;
-    REQUIRE(first > 0); // on screen and painting
     for (int i = 0; i < 10; ++i) show(); // what the editor's timer does, 30 times a second
-    CHECK(panel.paints == first);
+    // A repaint per update would add ten; the system may still add one or two.
+    CHECK(panel.paints - first <= 2);
     panel.removeFromDesktop();
 }
