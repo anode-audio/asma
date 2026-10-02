@@ -24,6 +24,7 @@ public:
     void setTrim(double start, double end);
     void setPlayhead(std::optional<double> seconds);
 
+    const audio::Overview* overview() const { return overview_.get(); }
     double trimStart() const { return start_; }
     double trimEnd() const { return end_; }
 

@@ -83,15 +83,26 @@ TEST_CASE("selecting a row plays it and space stops it", "[editor]")
     CHECK(rig.playing());
 }
 
-TEST_CASE("the status line says when a sync is a guess", "[editor]")
+TEST_CASE("the Tempo chip says what sync does to the selection", "[editor]")
 {
-    EditorRig rig;
-    CHECK(rig.editor->statusText().isNotEmpty());
+    EditorRig rig(AsmaProcessor::Mode::Standalone); // at its manual 120 BPM
     rig.type("bass");
     rig.editor->table().selectRow(0);
     REQUIRE(rig.playing());
     rig.editor->poll();
-    CHECK(rig.editor->statusText().contains("120")); // the loop's own tempo, from its name
+    CHECK(rig.editor->preview().tempoChip().detail() == juce::String::fromUTF8("120 \u2192 120 \u00b7 x1.00"));
+    rig.editor->bpmBox().setValue(180.0, juce::sendNotificationSync);
+    juce::AudioBuffer<float> buffer(2, 512);
+    juce::MidiBuffer midi;
+    rig.p->processBlock(buffer, midi); // the new tempo reaches the processor's transport
+    rig.editor->poll();
+    CHECK(rig.editor->preview().tempoChip().detail() == juce::String::fromUTF8("120 \u2192 180 \u00b7 x1.50"));
+
+    EditorRig plugin; // no host playing: no tempo to sync to
+    plugin.type("bass");
+    plugin.editor->table().selectRow(0);
+    plugin.editor->poll();
+    CHECK(plugin.editor->preview().tempoChip().detail() == juce::String::fromUTF8("no tempo \u00b7 plays as is"));
 }
 
 TEST_CASE("dragging a row out hands over the original or a render", "[editor]")
@@ -170,7 +181,7 @@ TEST_CASE("the standalone adds a folder and shows the scan in the table", "[edit
     while (rig.p->scans()->busy() && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     rig.editor->poll();
-    CHECK(rig.editor->statusText().contains("1 added"));
+    CHECK(rig.editor->footer().rightText().contains("Scan finished: 1 added"));
     CHECK(rig.editor->table().getNumRows() == 4);
 }
 
@@ -186,13 +197,150 @@ TEST_CASE("loading state with the editor open updates it, and old settings stay 
     rig.editor->poll();
     CHECK(rig.editor->searchBox().getText() == "snare");
     CHECK(rig.editor->table().getNumRows() == 1);
-    CHECK_FALSE(rig.editor->tempoSyncToggle().getToggleState());
-    CHECK_FALSE(rig.editor->gainMatchToggle().getToggleState());
+    CHECK_FALSE(rig.editor->preview().tempoChip().getToggleState());
+    CHECK_FALSE(rig.editor->preview().gainChip().getToggleState());
 
-    rig.editor->keySyncToggle().setToggleState(true, juce::sendNotificationSync);
+    rig.editor->preview().chooseKey(1); // key sync on, in C
     const app::PluginState after = rig.p->pluginState();
     CHECK(after.sync.key);
     CHECK_FALSE(after.sync.tempo); // not written back from the editor's old view
     CHECK_FALSE(after.gainMatch);
     CHECK(after.search.text == "snare");
 }
+
+TEST_CASE("the table area says why it has nothing to show", "[editor]")
+{
+    test::LibraryFixture f; // no scan: no library
+    const juce::ScopedJuceInitialiser_GUI gui;
+    {
+        AsmaProcessor p;
+        std::unique_ptr<AsmaEditor> editor(dynamic_cast<AsmaEditor*>(p.createEditorAndMakeActive()));
+        editor->poll();
+        CHECK(editor->emptyText().contains("Open the asma app")); // a plugin never makes one
+        p.editorBeingDeleted(editor.get());
+    }
+    {
+        AsmaProcessor p(AsmaProcessor::Mode::Standalone);
+        std::unique_ptr<AsmaEditor> editor(dynamic_cast<AsmaEditor*>(p.createEditorAndMakeActive()));
+        editor->poll();
+        CHECK(editor->emptyText().contains("Add a folder"));
+        p.editorBeingDeleted(editor.get());
+    }
+    EditorRig rig;
+    CHECK(rig.editor->emptyText().isEmpty());
+    rig.type("nothing like this");
+    CHECK(rig.editor->emptyText() == "No samples match.");
+    CHECK(rig.editor->topBar().countText() == "0 of 3");
+    rig.type("kick");
+    CHECK(rig.editor->emptyText().isEmpty());
+    CHECK(rig.editor->topBar().countText() == "1 of 3");
+}
+
+TEST_CASE("a plugin shows the host's tempo where the standalone sets its own", "[editor]")
+{
+    EditorRig rig;
+    test::FakePlayHead host;
+    host.bpm = 124.0;
+    rig.p->setPlayHead(&host);
+    juce::AudioBuffer<float> buffer(2, 512);
+    juce::MidiBuffer midi;
+    rig.p->processBlock(buffer, midi);
+    rig.editor->poll();
+    CHECK(rig.editor->topBar().hostTempoText() == "host 124 BPM");
+    rig.p->setPlayHead(nullptr);
+}
+
+TEST_CASE("an edit in the preview reaches the project, the engine and the footer, and a new selection drops it",
+          "[editor]")
+{
+    EditorRig rig;
+    rig.type("kick");
+    rig.editor->table().selectRow(0);
+    REQUIRE(rig.playing());
+    rig.editor->poll();
+    CHECK(rig.editor->footer().dragText() == "Drag out: the original file");
+    rig.editor->preview().direction().segment(1).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.p->pluginState().edits.direction == audio::Direction::Reverse);
+    rig.editor->poll();
+    CHECK(rig.editor->footer().dragText() == "Drag out renders: reversed");
+
+    rig.type("");
+    rig.editor->table().selectRow(rig.editor->table().getSelectedRow() == 0 ? 1 : 0);
+    CHECK(rig.p->pluginState().edits.direction == audio::Direction::Forward);
+    CHECK(rig.editor->preview().direction().selected() == 0);
+}
+
+TEST_CASE("the preview draws the selection's waveform", "[editor]")
+{
+    EditorRig rig;
+    rig.type("kick");
+    rig.editor->table().selectRow(0);
+    REQUIRE(rig.playing());
+    rig.editor->poll();
+    REQUIRE(rig.editor->preview().waveform().overview());
+    CHECK(rig.editor->preview().waveform().overview()->sampleRate == 48000);
+}
+
+TEST_CASE("Clear renders empties the renders folder", "[editor]")
+{
+    EditorRig rig;
+    rig.type("kick");
+    rig.editor->table().selectRow(0);
+    app::PluginState s = rig.p->pluginState();
+    s.edits.direction = audio::Direction::Reverse;
+    rig.p->setPluginState(s);
+    juce::StringArray files;
+    bool canMove = true;
+    const juce::DragAndDropTarget::SourceDetails details({}, rig.editor.get(), {});
+    REQUIRE(rig.editor->shouldDropFilesWhenDraggedExternally(details, files, canMove));
+    CHECK(rig.editor->footer().clearButton().isVisible());
+    rig.editor->clearRenders();
+    CHECK(audio::RenderStore(audio::RenderStore::defaultDir()).bytes() == 0);
+    CHECK_FALSE(rig.editor->footer().clearButton().isVisible());
+}
+
+TEST_CASE("the window opens at its default size and keeps its minimum", "[editor]")
+{
+    EditorRig rig;
+    CHECK(rig.editor->getWidth() == AsmaEditor::kDefaultWidth);
+    CHECK(rig.editor->getHeight() == AsmaEditor::kDefaultHeight);
+    REQUIRE(rig.editor->getConstrainer());
+    CHECK(rig.editor->getConstrainer()->getMinimumWidth() == AsmaEditor::kMinWidth);
+    CHECK(rig.editor->getConstrainer()->getMinimumHeight() == AsmaEditor::kMinHeight);
+}
+
+TEST_CASE("a project whose sample has gone opens with nothing selected", "[editor]")
+{
+    EditorRig rig;
+    app::PluginState s = rig.p->pluginState();
+    s.selected = toUtf8(rig.f.dir.path() / "gone.wav");
+    s.edits.direction = audio::Direction::Reverse;
+    rig.p->setPluginState(s);
+    rig.editor->poll();
+    CHECK(rig.editor->table().getSelectedRow() < 0);
+    CHECK(rig.editor->footer().dragText().isEmpty()); // nothing to drag
+    CHECK_FALSE(rig.editor->preview().waveform().overview());
+}
+
+#if !JUCE_WINDOWS
+TEST_CASE("Clear renders says when a render could not be deleted", "[editor]")
+{
+    EditorRig rig;
+    rig.type("kick");
+    rig.editor->table().selectRow(0);
+    app::PluginState s = rig.p->pluginState();
+    s.edits.direction = audio::Direction::Reverse;
+    rig.p->setPluginState(s);
+    juce::StringArray files;
+    bool canMove = true;
+    const juce::DragAndDropTarget::SourceDetails details({}, rig.editor.get(), {});
+    REQUIRE(rig.editor->shouldDropFilesWhenDraggedExternally(details, files, canMove));
+    const auto dir = audio::RenderStore::defaultDir();
+    fs::permissions(dir, fs::perms::owner_read | fs::perms::owner_exec); // nothing in it can be deleted
+    rig.editor->clearRenders();
+    fs::permissions(dir, fs::perms::owner_all);
+    CHECK(rig.editor->footer().rightText().contains("could not be deleted"));
+    CHECK(rig.editor->footer().clearButton().isVisible()); // still there to try again
+}
+#endif

@@ -82,6 +82,18 @@ std::vector<SearchRow> LibraryView::search(const SearchModel& model)
     return guarded([&] { return asma::search(*db_, model); }, std::vector<SearchRow>{});
 }
 
+std::int64_t LibraryView::sampleCount()
+{
+    return guarded(
+        [&] {
+            // The same files search() starts from, before any filter.
+            auto s = db_->prepare("SELECT COUNT(*) FROM files f JOIN roots r ON r.id = f.root_id "
+                                  "WHERE f.status = 'ok' AND r.enabled = 1");
+            return s.step() ? s.getInt(0) : std::int64_t{0};
+        },
+        std::int64_t{0});
+}
+
 audio::SampleInfo LibraryView::info(std::int64_t fileId)
 {
     return guarded(

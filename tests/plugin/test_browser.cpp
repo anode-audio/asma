@@ -18,10 +18,12 @@ TEST_CASE("Browser searches as the model changes", "[browser]")
     Browser browser(library);
     browser.poll();
     CHECK(browser.rows().size() == 3);
+    CHECK(browser.total() == 3);
     SearchModel m;
     m.text = "kick";
     browser.setSearch(m);
     REQUIRE(browser.rows().size() == 1);
+    CHECK(browser.total() == 3); // "1 of 3"
     CHECK(fs::equivalent(browser.path(0), f.kick));
     CHECK(browser.searchModel().text == "kick");
     CHECK(browser.contentHash(0).size() == 16);

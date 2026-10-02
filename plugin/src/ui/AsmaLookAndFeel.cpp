@@ -100,12 +100,14 @@ void AsmaLookAndFeel::drawTableHeaderBackground(juce::Graphics& g, juce::TableHe
     g.fillRect(0, header.getHeight() - 1, header.getWidth(), 1);
 }
 
-void AsmaLookAndFeel::drawTableHeaderColumn(juce::Graphics& g, juce::TableHeaderComponent&, const juce::String& name,
-                                            int, int width, int height, bool, bool, int)
+void AsmaLookAndFeel::drawTableHeaderColumn(juce::Graphics& g, juce::TableHeaderComponent& header, const juce::String& name,
+                                            int columnId, int width, int height, bool, bool, int)
 {
+    // The first column starts at the table's margin, as its cells do.
+    const int x = header.getIndexOfColumnId(columnId, true) == 0 ? kTableMargin : 0;
     g.setFont(theme::font(theme::Face::Heading, 11.0f).withExtraKerningFactor(0.06f));
     g.setColour(theme::muted);
-    g.drawText(name.toUpperCase(), 0, 0, width, height - 1, juce::Justification::centredLeft, true);
+    g.drawText(name.toUpperCase(), x, 0, width - x, height - 1, juce::Justification::centredLeft, true);
 }
 
 void AsmaLookAndFeel::drawScrollbar(juce::Graphics& g, juce::ScrollBar&, int x, int y, int width, int height, bool vertical,
@@ -117,16 +119,16 @@ void AsmaLookAndFeel::drawScrollbar(juce::Graphics& g, juce::ScrollBar&, int x, 
     g.fillRoundedRectangle(thumb.toFloat().reduced(3.0f), 2.0f);
 }
 
-void AsmaLookAndFeel::fillTextEditorBackground(juce::Graphics& g, int width, int height, juce::TextEditor&)
+void AsmaLookAndFeel::fillTextEditorBackground(juce::Graphics& g, int width, int height, juce::TextEditor& editor)
 {
-    g.setColour(theme::ground);
+    g.setColour(editor.findColour(juce::TextEditor::backgroundColourId));
     g.fillRoundedRectangle(juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)),
                            theme::kRadius);
 }
 
-void AsmaLookAndFeel::drawTextEditorOutline(juce::Graphics& g, int width, int height, juce::TextEditor&)
+void AsmaLookAndFeel::drawTextEditorOutline(juce::Graphics& g, int width, int height, juce::TextEditor& editor)
 {
-    g.setColour(theme::border);
+    g.setColour(editor.findColour(juce::TextEditor::outlineColourId));
     g.drawRoundedRectangle(juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width) - 1.0f, static_cast<float>(height) - 1.0f),
                            theme::kRadius, 1.0f);
 }

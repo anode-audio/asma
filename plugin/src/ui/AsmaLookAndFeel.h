@@ -12,6 +12,7 @@ namespace asma::app {
 // A toggling button is quiet when off.
 class AsmaLookAndFeel : public juce::LookAndFeel_V4 {
 public:
+    static constexpr int kTableMargin = 14; // px before a table's first column's text
     AsmaLookAndFeel();
 
     // Fonts that name no typeface get the embedded Inter, never a system face.

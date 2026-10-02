@@ -20,8 +20,8 @@ struct PluginState {
     bool gainMatch = true;
     double quantise = 0.0; // beats; 0 is off
     audio::Edits edits;    // of the selected sample
-    int width = 900;
-    int height = 600;
+    int width = 1100; // the window; spec section 9, Window
+    int height = 720;
 };
 
 std::string toJson(const PluginState& state);

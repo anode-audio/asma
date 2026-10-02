@@ -3,8 +3,10 @@
 
 #include "AsmaProcessor.h"
 #include "DragOut.h"
+#include "TempoChip.h"
 #include "asma/audio/Render.h"
 #include "asma/core/Fs.h"
+#include "ui/Theme.h"
 
 #include <cmath>
 
@@ -12,118 +14,166 @@ namespace asma::app {
 
 namespace {
 
-const char* const kKeys[] = {"C",  "C#",  "D",  "D#",  "E",  "F",  "F#",  "G",  "G#",  "A",  "A#",  "B",
-                             "Cm", "C#m", "Dm", "D#m", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "A#m", "Bm"};
+constexpr int kTimerHz = 30;      // the playhead moves smoothly
+constexpr int kLibraryEvery = 6;  // ticks between library checks: 5 a second
+constexpr int kRendersEvery = 60; // ticks between measuring the renders: every 2 s
 
-juce::String bpmText(const std::optional<double>& bpm)
-{
-    if (!bpm) return {};
-    return juce::String(std::round(*bpm * 100.0) / 100.0);
-}
+juce::String utf8(const std::string& s) { return juce::String::fromUTF8(s.c_str()); }
 
 } // namespace
 
 AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     : juce::AudioProcessorEditor(owner), processor_(owner),
-      library_(owner.libraryPath(), owner.isStandalone() ? LibraryView::Access::MayMigrate : LibraryView::Access::ReadOnly)
+      library_(owner.libraryPath(), owner.isStandalone() ? LibraryView::Access::MayMigrate : LibraryView::Access::ReadOnly),
+      top_(owner.isStandalone())
 {
+    setLookAndFeel(&lookAndFeel_);
     const PluginState state = processor_.pluginState();
 
-    search_.setTextToShowWhenEmpty("Search samples", juce::Colours::grey);
-    search_.onTextChange = [this] { searchChanged(); };
-    addAndMakeVisible(search_);
-
-    for (int i = 0; i < static_cast<int>(std::size(kKeys)); ++i) projectKey_.addItem(kKeys[i], i + 1);
-    projectKey_.setTextWhenNothingSelected("Project key");
-    for (auto* b : {&tempoSync_, &keySync_, &gainMatch_}) {
-        b->onClick = [this] { syncChanged(); };
-        addAndMakeVisible(*b);
-    }
-    projectKey_.onChange = [this] { syncChanged(); };
-    addAndMakeVisible(projectKey_);
-
+    top_.searchBox().onTextChange = [this] { searchChanged(); };
+    addAndMakeVisible(top_);
     if (processor_.isStandalone()) {
-        bpm_.setRange(20.0, 300.0, 0.1);
-        bpm_.setTextValueSuffix(" BPM");
-        bpm_.onValueChange = [this] {
-            processor_.setManualBpm(bpm_.getValue());
-            if (link_.getToggleState()) processor_.setLinkTempo(bpm_.getValue());
+        top_.tempoBox().onValueChange = [this] {
+            const double bpm = top_.tempoBox().getValue();
+            processor_.setManualBpm(bpm);
+            if (top_.linkChip().getToggleState()) processor_.setLinkTempo(bpm);
         };
-        link_.onClick = [this] { processor_.setLinkEnabled(link_.getToggleState()); };
-        addAndMakeVisible(bpm_);
-        addAndMakeVisible(link_);
-        addFolder_.onClick = [this] {
-            chooser_ = std::make_unique<juce::FileChooser>("Add a sample folder");
-            chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-                                  [this](const juce::FileChooser& chooser) {
-                                      const juce::File folder = chooser.getResult();
-                                      if (folder != juce::File()) addFolder(fromUtf8(folder.getFullPathName().toStdString()));
-                                  });
-        };
-        addAndMakeVisible(addFolder_);
+        top_.linkChip().onClick = [this] { processor_.setLinkEnabled(top_.linkChip().getToggleState()); };
+        top_.addFolderButton().onClick = [this] { chooseFolder(); };
+        emptyAddFolder_.onClick = [this] { chooseFolder(); };
     }
 
     auto& header = table_.getHeader();
-    header.addColumn("Name", kName, 320);
-    header.addColumn("BPM", kBpm, 70);
-    header.addColumn("Key", kKey, 60);
-    header.addColumn("Type", kType, 80);
-    header.addColumn("Length", kLength, 80);
+    header.addColumn("Name", kName, 400, 120, -1, juce::TableHeaderComponent::notSortable);
+    header.addColumn("Type", kType, 76, 60, 120, juce::TableHeaderComponent::notSortable);
+    header.addColumn("BPM", kBpm, 70, 50, 120, juce::TableHeaderComponent::notSortable);
+    header.addColumn("Key", kKey, 56, 40, 100, juce::TableHeaderComponent::notSortable);
+    header.addColumn("Length", kLength, 72, 50, 120, juce::TableHeaderComponent::notSortable);
+    header.setStretchToFitActive(true);
+    table_.setHeaderHeight(theme::kHeaderRowHeight);
+    table_.setRowHeight(theme::kRowHeight);
     table_.setMultipleSelectionEnabled(false);
+    table_.setTitle("Samples");
     addAndMakeVisible(table_);
 
-    status_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(status_);
+    empty_.setJustificationType(juce::Justification::centred);
+    empty_.setFont(theme::font(theme::Face::Text, 13.0f));
+    empty_.setColour(juce::Label::textColourId, theme::muted);
+    addChildComponent(empty_);
+    addChildComponent(emptyAddFolder_);
+
+    preview_.onPlayStop = [this] {
+        if (processor_.engine().status().playing) processor_.engine().stop();
+        else processor_.engine().play();
+    };
+    preview_.onEditsChanged = [this](const audio::Edits& edits) {
+        processor_.setEdits(edits);
+        updateReadouts();
+    };
+    preview_.onTempoSync = [this](bool on) {
+        audio::SyncSettings sync = processor_.pluginState().sync;
+        sync.tempo = on;
+        syncChanged(sync);
+    };
+    preview_.onKeySync = [this](std::optional<std::string> key) {
+        audio::SyncSettings sync = processor_.pluginState().sync;
+        sync.key = key.has_value();
+        if (key) sync.projectKey = audio::KeyName(*key);
+        syncChanged(sync);
+    };
+    preview_.onGainMatch = [this](bool on) {
+        processor_.updateState([&](PluginState& s) { s.gainMatch = on; });
+        processor_.engine().setGainMatch(on);
+    };
+    preview_.onQuantise = [this](double beats) {
+        processor_.updateState([&](PluginState& s) { s.quantise = beats; });
+        processor_.engine().setQuantise(beats);
+    };
+    addAndMakeVisible(preview_);
+
+    footer_.onClearRenders = [this] {
+        const auto bytes = audio::RenderStore(audio::RenderStore::defaultDir()).bytes();
+        juce::NativeMessageBox::showOkCancelBox(
+            juce::MessageBoxIconType::WarningIcon, "Clear renders",
+            "Delete " + Footer::sizeText(bytes) + " of rendered drag-outs? A project that plays a render from where it lies "
+                "(Reaper, or Live without Collect All and Save) will lose that audio.",
+            this, juce::ModalCallbackFunction::create([safe = juce::Component::SafePointer<AsmaEditor>(this)](int ok) {
+                if (ok != 0 && safe) safe->clearRenders();
+            }));
+    };
+    addAndMakeVisible(footer_);
 
     setResizable(true, true);
-    setResizeLimits(600, 400, 8000, 8000);
-    setSize(state.width, state.height);
+    setResizeLimits(kMinWidth, kMinHeight, 8000, 8000);
+    setSize(std::max(state.width, kMinWidth), std::max(state.height, kMinHeight));
     setWantsKeyboardFocus(true);
     loadState();
+    updateRenderSize();
     poll();
-    startTimerHz(5);
+    startTimerHz(kTimerHz);
+}
+
+AsmaEditor::~AsmaEditor()
+{
+    stopTimer();
+    setLookAndFeel(nullptr);
 }
 
 void AsmaEditor::loadState()
 {
     loadedStates_ = processor_.stateLoads();
     const PluginState state = processor_.pluginState();
-    search_.setText(state.search.text, false);
-    tempoSync_.setToggleState(state.sync.tempo, juce::dontSendNotification);
-    keySync_.setToggleState(state.sync.key, juce::dontSendNotification);
-    gainMatch_.setToggleState(state.gainMatch, juce::dontSendNotification);
-    projectKey_.setSelectedId(0, juce::dontSendNotification);
-    for (int i = 0; i < static_cast<int>(std::size(kKeys)); ++i)
-        if (state.sync.projectKey.view() == kKeys[i]) projectKey_.setSelectedId(i + 1, juce::dontSendNotification);
+    top_.searchBox().setText(state.search.text, false);
+    preview_.setEdits(state.edits);
+    preview_.setGainMatch(state.gainMatch);
+    preview_.setQuantise(state.quantise);
+    preview_.setKey(state.sync.key, std::string(state.sync.projectKey.view()), {});
     if (processor_.isStandalone()) {
-        bpm_.setValue(state.sync.hostBpm > 0.0 ? state.sync.hostBpm : 120.0, juce::dontSendNotification);
-        link_.setToggleState(state.link, juce::dontSendNotification);
+        top_.tempoBox().setValue(state.sync.hostBpm > 0.0 ? state.sync.hostBpm : 120.0, juce::dontSendNotification);
+        top_.linkChip().setToggleState(state.link, juce::dontSendNotification);
     }
     browser_.setSearch(state.search);
     table_.updateContent();
     showSelection();
 }
 
-AsmaEditor::~AsmaEditor() { stopTimer(); }
-
-void AsmaEditor::paint(juce::Graphics& g) { g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId)); }
+void AsmaEditor::paint(juce::Graphics& g)
+{
+    g.fillAll(theme::surface);
+    auto area = getLocalBounds();
+    area.removeFromTop(theme::kTopBarHeight);
+    area.removeFromBottom(theme::kFooterHeight);
+    auto bottom = area.removeFromBottom(theme::kPreviewHeight);
+    // The bottom panel, with the Similar list's place (plan 3c2b) on its right.
+    g.setColour(theme::panel);
+    g.fillRect(bottom);
+    g.setColour(theme::border);
+    g.fillRect(bottom.getX(), bottom.getY(), bottom.getWidth(), 1);
+    g.fillRect(bottom.getRight() - theme::kSimilarWidth, bottom.getY(), 1, bottom.getHeight());
+    // The sidebar's place (plan 3c2b).
+    const auto sidebar = area.removeFromLeft(theme::kSidebarWidth);
+    g.setColour(theme::panel);
+    g.fillRect(sidebar);
+    g.setColour(theme::border);
+    g.fillRect(sidebar.getRight() - 1, sidebar.getY(), 1, sidebar.getHeight());
+    // The chip row's place (plan 3c2b).
+    g.fillRect(area.getX(), area.getY() + theme::kChipRowHeight - 1, area.getWidth(), 1);
+}
 
 void AsmaEditor::resized()
 {
-    auto area = getLocalBounds().reduced(8);
-    auto top = area.removeFromTop(28);
-    search_.setBounds(top.removeFromLeft(top.getWidth() / 2).reduced(0, 2));
-    for (juce::Component* c : {static_cast<juce::Component*>(&tempoSync_), static_cast<juce::Component*>(&keySync_),
-                               static_cast<juce::Component*>(&projectKey_), static_cast<juce::Component*>(&gainMatch_)})
-        c->setBounds(top.removeFromLeft(top.getWidth() / 4).reduced(4, 2));
-    if (processor_.isStandalone()) {
-        auto row = area.removeFromTop(28);
-        bpm_.setBounds(row.removeFromLeft(180).reduced(0, 2));
-        link_.setBounds(row.removeFromLeft(140).reduced(4, 2));
-        addFolder_.setBounds(row.removeFromRight(140).reduced(0, 2));
-    }
-    status_.setBounds(area.removeFromBottom(24));
-    table_.setBounds(area.reduced(0, 4));
+    auto area = getLocalBounds();
+    top_.setBounds(area.removeFromTop(theme::kTopBarHeight));
+    footer_.setBounds(area.removeFromBottom(theme::kFooterHeight));
+    auto bottom = area.removeFromBottom(theme::kPreviewHeight);
+    bottom.removeFromTop(1);
+    bottom.removeFromRight(theme::kSimilarWidth);
+    preview_.setBounds(bottom);
+    area.removeFromLeft(theme::kSidebarWidth);
+    area.removeFromTop(theme::kChipRowHeight);
+    table_.setBounds(area);
+    empty_.setBounds(area.withSizeKeepingCentre(std::min(area.getWidth(), 520), 60).translated(0, -20));
+    emptyAddFolder_.setBounds(area.withSizeKeepingCentre(120, 30).translated(0, 30));
     processor_.updateState([&](PluginState& s) {
         s.width = getWidth();
         s.height = getHeight();
@@ -140,13 +190,53 @@ bool AsmaEditor::keyPressed(const juce::KeyPress& key)
     return false;
 }
 
+void AsmaEditor::chooseFolder()
+{
+    chooser_ = std::make_unique<juce::FileChooser>("Add a sample folder");
+    chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this](const juce::FileChooser& chooser) {
+                              const juce::File folder = chooser.getResult();
+                              if (folder != juce::File()) addFolder(fromUtf8(folder.getFullPathName().toStdString()));
+                          });
+}
+
 void AsmaEditor::addFolder(const std::filesystem::path& folder)
 {
     ScanJob* scans = processor_.scans();
     if (!scans) return;
     std::string why;
     scanMessage_ = scans->addAndScan(folder, &why) ? juce::String() : juce::String("Cannot add that folder: ") + why;
-    updateStatus();
+    updateReadouts();
+}
+
+void AsmaEditor::clearRenders()
+{
+    audio::RenderStore store(audio::RenderStore::defaultDir());
+    store.clear();
+    // A render a program still holds open, or a folder asma may not write,
+    // stays: say so rather than leave the size standing unexplained.
+    if (store.bytes() > 0) scanMessage_ = "Some renders could not be deleted; another program may be using them.";
+    updateRenderSize();
+    updateReadouts();
+}
+
+void AsmaEditor::updateRenderSize()
+{
+    std::uintmax_t bytes = 0;
+    try {
+        bytes = audio::RenderStore(audio::RenderStore::defaultDir()).bytes();
+    } catch (const std::exception&) {
+        // No renders folder yet, or not readable: nothing to offer.
+    }
+    footer_.setRenderBytes(bytes);
+}
+
+void AsmaEditor::timerCallback()
+{
+    ++ticks_;
+    if (ticks_ % kRendersEvery == 0) updateRenderSize();
+    if (ticks_ % kLibraryEvery == 0) poll();
+    else updateReadouts(); // the playhead and the chips keep up between library checks
 }
 
 void AsmaEditor::poll()
@@ -170,33 +260,25 @@ void AsmaEditor::poll()
         table_.updateContent();
         showSelection();
     }
-    updateStatus();
+    updateReadouts();
 }
 
 void AsmaEditor::searchChanged()
 {
     SearchModel model = browser_.searchModel();
-    model.text = search_.getText().toStdString();
+    model.text = top_.searchBox().getText().toStdString();
     browser_.setSearch(model);
     processor_.updateState([&](PluginState& s) { s.search = model; });
     table_.updateContent();
     showSelection();
+    updateReadouts();
 }
 
-void AsmaEditor::syncChanged()
+void AsmaEditor::syncChanged(const audio::SyncSettings& sync)
 {
-    audio::SyncSettings sync = processor_.pluginState().sync;
-    sync.tempo = tempoSync_.getToggleState();
-    sync.key = keySync_.getToggleState();
-    const int id = projectKey_.getSelectedId();
-    sync.projectKey = id > 0 ? audio::KeyName(kKeys[id - 1]) : audio::KeyName();
-    const bool gain = gainMatch_.getToggleState();
-    processor_.updateState([&](PluginState& s) {
-        s.sync = sync;
-        s.gainMatch = gain;
-    });
+    processor_.updateState([&](PluginState& s) { s.sync = sync; });
     processor_.engine().setSync(sync);
-    processor_.engine().setGainMatch(gain);
+    updateReadouts();
 }
 
 void AsmaEditor::showSelection()
@@ -210,42 +292,95 @@ void AsmaEditor::showSelection()
     const juce::ScopedValueSetter quiet(quietSelection_, true);
     if (row >= 0) table_.selectRow(row);
     else table_.deselectAllRows();
+    selectionChanged();
 }
 
-void AsmaEditor::updateStatus()
+void AsmaEditor::selectionChanged()
 {
-    if (ScanJob* scans = processor_.scans(); scans && scans->busy()) {
-        status_.setText(scans->progress(), juce::dontSendNotification);
-        return;
+    selectedRow_ = table_.getSelectedRow();
+    selectedInfo_ = selectedRow_ >= 0 ? browser_.info(selectedRow_) : audio::SampleInfo{};
+    selectedFolder_.clear();
+    if (selectedRow_ >= 0) {
+        const auto& rel = browser_.rows()[static_cast<std::size_t>(selectedRow_)].relPath;
+        const auto slash = rel.find_last_of('/');
+        if (slash != std::string::npos) selectedFolder_ = rel.substr(0, slash);
     }
-    if (scanMessage_.isNotEmpty()) {
-        status_.setText(scanMessage_, juce::dontSendNotification);
-        return;
+}
+
+void AsmaEditor::updateReadouts()
+{
+    const PluginState state = processor_.pluginState();
+    const audio::EngineStatus status = processor_.engine().status();
+    const bool current = status.generation == processor_.engine().selected(); // the status is the selection's
+
+    // The top bar.
+    top_.setCount(static_cast<int>(browser_.rows().size()), static_cast<int>(browser_.total()));
+    if (!processor_.isStandalone()) top_.setHostBpm(processor_.hostBpm());
+
+    // The table, or what it says instead.
+    juce::String empty;
+    const bool standalone = processor_.isStandalone();
+    if (library_.state() == LibraryState::Missing)
+        empty = standalone ? "No library yet. Add a folder of samples to start."
+                           : "No library yet. Open the asma app and add a folder of samples.";
+    else if (library_.state() != LibraryState::Open)
+        empty = juce::String(library_.message());
+    else if (browser_.rows().empty())
+        empty = browser_.searchModel().text.empty() ? (standalone ? "The library is empty. Add a folder of samples."
+                                                                  : "The library is empty.")
+                                                    : "No samples match.";
+    if (empty != empty_.getText()) empty_.setText(empty, juce::dontSendNotification);
+    empty_.setVisible(empty.isNotEmpty());
+    emptyAddFolder_.setVisible(standalone && empty.isNotEmpty() && library_.state() != LibraryState::Outdated
+                               && library_.state() != LibraryState::Unreadable && browser_.searchModel().text.empty());
+
+    // The preview.
+    if (selectedRow_ >= 0 && selectedRow_ < static_cast<int>(browser_.rows().size())) {
+        const SearchRow& r = browser_.rows()[static_cast<std::size_t>(selectedRow_)];
+        const auto overview = processor_.engine().overview();
+        preview_.waveform().setOverview(overview);
+        preview_.setFile(utf8(r.name), overview ? PreviewPanel::fileLine(selectedFolder_, overview->sampleRate,
+                                                                          overview->channels(), overview->seconds())
+                                                : PreviewPanel::fileLine(selectedFolder_, 0, 0, r.duration));
+        preview_.waveform().setPlayhead(current && status.playing ? std::optional<double>(status.position) : std::nullopt);
+    } else {
+        preview_.waveform().setOverview(nullptr);
+        preview_.setFile({}, {});
     }
-    if (library_.state() != LibraryState::Open) {
-        status_.setText(library_.message(), juce::dontSendNotification);
-        return;
+    preview_.setPlaying(status.playing);
+    audio::SyncSettings sync = state.sync;
+    sync.hostBpm = processor_.hostBpm();
+    preview_.setTempo(state.sync.tempo, selectedRow_ >= 0 ? tempoChip(selectedInfo_, sync, current && status.failed)
+                                                          : ChipText{state.sync.tempo ? "" : "off", Tone::Muted});
+    std::string keyStatus;
+    if (current && status.keyUnsure) keyStatus = "?";
+    else if (current && status.keySynced && (status.semitones < 0.0 || status.semitones > 0.0))
+        keyStatus = (status.semitones > 0.0 ? "+" : "") + std::to_string(std::llround(status.semitones));
+    preview_.setKey(state.sync.key, std::string(state.sync.projectKey.view()), keyStatus);
+
+    // The footer.
+    if (selectedRow_ >= 0) {
+        const audio::RenderSettings drag =
+            dragSettings(state.edits, audio::planSync(selectedInfo_, sync), static_cast<int>(processor_.sampleRate()));
+        footer_.setDrag(utf8(dragSummary(drag, selectedInfo_.bpm)));
+    } else {
+        footer_.setDrag({});
     }
-    const int row = table_.getSelectedRow();
-    if (row < 0) {
-        status_.setText(juce::String(browser_.rows().size()) + " samples", juce::dontSendNotification);
-        return;
-    }
-    const SearchRow& r = browser_.rows()[static_cast<std::size_t>(row)];
-    const audio::EngineStatus st = processor_.engine().status();
-    juce::String text = juce::String::fromUTF8(r.name.c_str());
-    if (r.bpm) text << "   " << bpmText(r.bpm) << " BPM" << (st.tempoUnsure ? " ?" : "");
-    if (st.tempoSynced) text << " (synced x" << juce::String(st.ratio, 2) << ")";
-    if (r.key) text << "   " << juce::String(*r.key) << (st.keyUnsure ? " ?" : "");
-    if (st.keySynced && (st.semitones < 0.0 || st.semitones > 0.0)) text << " (" << (st.semitones > 0 ? "+" : "") << juce::String(st.semitones, 0) << ")";
-    status_.setText(text, juce::dontSendNotification);
+    ScanJob* scans = processor_.scans();
+    footer_.setStatus(scans && scans->busy() ? juce::String(scans->progress()) : scanMessage_);
 }
 
 int AsmaEditor::getNumRows() { return static_cast<int>(browser_.rows().size()); }
 
-void AsmaEditor::paintRowBackground(juce::Graphics& g, int, int, int, bool selected)
+void AsmaEditor::paintRowBackground(juce::Graphics& g, int, int width, int height, bool selected)
 {
-    if (selected) g.fillAll(getLookAndFeel().findColour(juce::TextEditor::highlightColourId));
+    if (selected) {
+        g.fillAll(theme::amber.withAlpha(0.10f));
+        g.setColour(theme::amber);
+        g.fillRect(0, 0, 2, height);
+    }
+    g.setColour(theme::raised);
+    g.fillRect(0, height - 1, width, 1);
 }
 
 void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, int height, bool)
@@ -253,24 +388,41 @@ void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, in
     if (row < 0 || row >= getNumRows()) return;
     const SearchRow& r = browser_.rows()[static_cast<std::size_t>(row)];
     juce::String text;
+    juce::Font font = theme::font(theme::Face::Mono, 12.0f);
+    juce::Colour colour = theme::text;
+    int x = 0;
     switch (column) {
-    case kName: text = juce::String::fromUTF8(r.name.c_str()); break;
-    case kBpm: text = bpmText(r.bpm); break;
-    case kKey: text = r.key ? juce::String(*r.key) : juce::String(); break;
-    case kType: text = !r.isLoop ? "" : (*r.isLoop ? "loop" : "one-shot"); break;
-    case kLength: text = juce::String(r.duration, 2) + " s"; break;
+    case kName:
+        text = utf8(r.name);
+        font = theme::font(theme::Face::Text, 13.0f);
+        x = AsmaLookAndFeel::kTableMargin;
+        break;
+    case kType:
+        text = !r.isLoop ? "" : (*r.isLoop ? "loop" : "one-shot");
+        font = theme::font(theme::Face::Text, 13.0f);
+        colour = theme::muted;
+        break;
+    case kBpm: text = r.bpm ? utf8(bpmText(*r.bpm)) : juce::String(); break;
+    case kKey: text = r.key ? utf8(*r.key) : juce::String(); break;
+    case kLength:
+        text = utf8(secondsText(r.duration));
+        colour = theme::muted;
+        break;
     default: break;
     }
-    g.setColour(getLookAndFeel().findColour(juce::ListBox::textColourId));
-    g.drawText(text, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
+    g.setFont(font);
+    g.setColour(colour);
+    g.drawText(text, x, 0, width - x - 6, height - 1, juce::Justification::centredLeft, true);
 }
 
 void AsmaEditor::selectedRowsChanged(int lastRowSelected)
 {
+    selectionChanged();
     if (quietSelection_ || lastRowSelected < 0) return;
     scanMessage_.clear();
-    processor_.select(browser_.path(lastRowSelected), browser_.info(lastRowSelected));
-    updateStatus();
+    processor_.select(browser_.path(lastRowSelected), selectedInfo_);
+    preview_.setEdits({}); // a new selection plays as it is
+    updateReadouts();
 }
 
 void AsmaEditor::returnKeyPressed(int) { processor_.engine().play(); }
@@ -299,6 +451,7 @@ bool AsmaEditor::shouldDropFilesWhenDraggedExternally(const juce::DragAndDropTar
         // A render that fails still leaves the original to drag.
     }
     files.add(juce::String::fromUTF8(toUtf8(file).c_str()));
+    updateRenderSize();
     return true;
 }
 
