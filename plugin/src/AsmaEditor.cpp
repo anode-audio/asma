@@ -2,6 +2,7 @@
 #include "AsmaEditor.h"
 
 #include "AsmaProcessor.h"
+#include "DragOut.h"
 #include "asma/audio/Render.h"
 #include "asma/core/Fs.h"
 
@@ -289,12 +290,8 @@ bool AsmaEditor::shouldDropFilesWhenDraggedExternally(const juce::DragAndDropTar
     const PluginState state = processor_.pluginState();
     audio::SyncSettings sync = state.sync;
     if (processor_.hostBpm() > 0.0) sync.hostBpm = processor_.hostBpm();
-    const audio::SyncPlan plan = audio::planSync(browser_.info(row), sync);
-    audio::RenderSettings settings;
-    settings.edits = state.edits;
-    settings.ratio = plan.ratio;
-    settings.semitones = plan.semitones;
-    settings.sampleRate = static_cast<int>(processor_.sampleRate());
+    const audio::RenderSettings settings =
+        dragSettings(state.edits, audio::planSync(browser_.info(row), sync), static_cast<int>(processor_.sampleRate()));
     std::filesystem::path file = path;
     try {
         file = audio::RenderStore(audio::RenderStore::defaultDir()).fileFor(path, settings, browser_.contentHash(row));
