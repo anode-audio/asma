@@ -48,3 +48,17 @@ TEST_CASE("a pressed accent segment is amber, a pressed plain one is lifted", "[
     CHECK(colourAt(0, 4) == theme::border); // the line before a middle segment
     b.setLookAndFeel(nullptr);
 }
+
+TEST_CASE("the fonts go when JUCE shuts down, not after it", "[theme]")
+{
+    // A plugin's statics outlive JUCE in the host; fonts held past shutdown
+    // crash some hosts as they unload the plugin.
+    const juce::Typeface* first = nullptr;
+    {
+        const juce::ScopedJuceInitialiser_GUI gui;
+        first = theme::typeface(theme::Face::Text).get();
+    }
+    const juce::ScopedJuceInitialiser_GUI gui;
+    CHECK(theme::typeface(theme::Face::Text).get() != first); // made afresh
+    CHECK(theme::typeface(theme::Face::Text)->getName() == "Inter");
+}
