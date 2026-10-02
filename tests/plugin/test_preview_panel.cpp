@@ -173,6 +173,12 @@ TEST_CASE("the footer offers to clear renders only when there are some", "[foote
 
 TEST_CASE("the preview panel leaves the screen alone when nothing it shows changed", "[preview]")
 {
+#if JUCE_LINUX
+    // It needs a real window: CI's X server has no window manager, and JUCE's
+    // window setup dies there on an X error. The code under test is the same
+    // on every system, and runs here on macOS and Windows.
+    SKIP("needs a window manager");
+#endif
     const juce::ScopedJuceInitialiser_GUI gui;
     struct Counting : PreviewPanel {
         int paints = 0;
