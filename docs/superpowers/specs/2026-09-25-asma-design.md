@@ -348,6 +348,8 @@ nothing:
 | loop, synced            | `120 → 180 · x1.50`        | green  |
 | loop, at 0.25x or 4x    | `120 → 30 · x0.25 max`     | amber  |
 | loop, tempo below 0.3   | `~97 ? · plays as is`      | amber  |
+| loop, no tempo known    | `? · plays as is`          | amber  |
+| no tempo from the host  | `no tempo · plays as is`   | muted  |
 | one-shot                | `one-shot · plays as is`   | muted  |
 | no loop verdict (stems) | `not a loop · plays as is` | muted  |
 | tempo sync switched off | `off`                      | muted  |

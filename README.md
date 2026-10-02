@@ -73,6 +73,24 @@ says so and leaves the sample alone. Renders stay in `renders` in the data
 directory until you clear them: a DAW may play a dragged file from where it
 lies. `--renders DIR` overrides the folder.
 
+## The app
+
+The window is the sample table with a preview panel under it: the selected
+sample's waveform, with trim handles to drag (double-click one to put it back),
+a forward, reverse or ping-pong switch, loop mode, and chips for tempo sync, key
+sync, loudness matching and a quantised start. The Tempo chip says what sync
+does to the selection and, when it does nothing, why: a one-shot, a long stem
+with no loop verdict, a tempo asma is unsure of, or no tempo from the host.
+Selecting another sample drops the edits, so moving through the table always
+plays each sample as it is. The footer says what a drag-out will carry and
+offers to clear the kept renders. Space plays and stops.
+
+The look is checked against the approved design by `[fidelity]` in
+`asma_plugin_tests`, on macOS only; `tests/ui/reference/README.md` says how the
+reference picture is made.
+
 ## License
 
-GPLv3. See `LICENSE`.
+GPLv3. See `LICENSE`. The fonts in `plugin/fonts` (Inter, JetBrains Mono, Space
+Grotesk) are under the SIL Open Font License 1.1; their licences are beside
+them.
