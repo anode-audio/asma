@@ -55,7 +55,9 @@ SyncPlan planSync(const SampleInfo& info, const SyncSettings& settings)
         if (info.bpm && *info.bpm > 0.0 && info.bpmConfidence >= kMinTempoConfidence) {
             // Exactly the host tempo, however far that stretches the loop, up
             // to what the stretcher plays: the status shows what is heard.
-            plan.ratio = std::clamp(settings.hostBpm / *info.bpm, Stretcher::kMinRatio, Stretcher::kMaxRatio);
+            const double wanted = settings.hostBpm / *info.bpm;
+            plan.ratio = std::clamp(wanted, Stretcher::kMinRatio, Stretcher::kMaxRatio);
+            plan.tempoClamped = wanted < Stretcher::kMinRatio || wanted > Stretcher::kMaxRatio;
             plan.tempoSynced = true;
         } else {
             plan.tempoUnsure = true;

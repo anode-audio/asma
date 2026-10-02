@@ -52,6 +52,7 @@ struct SyncPlan {
     double ratio = 1.0;     // input frames per output frame, for Stretcher::setTiming
     double semitones = 0.0;
     bool tempoSynced = false;
+    bool tempoClamped = false; // the tempo wanted more than the stretcher's 0.25x..4x
     bool keySynced = false;
     // Sync was wanted but the sample's own value is too uncertain.
     bool tempoUnsure = false;

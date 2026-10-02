@@ -38,11 +38,17 @@ TEST_CASE("planSync stretches loops to exactly the host tempo, within the stretc
     CHECK(planSync(loop(70), host(140)).ratio == Catch::Approx(2.0));        // no half time
     CHECK(planSync(loop(120), host(180)).ratio == Catch::Approx(1.5));
     CHECK(planSync(loop(120), host(60)).ratio == Catch::Approx(0.5));
-    CHECK(planSync(loop(120), host(20)).ratio == Catch::Approx(Stretcher::kMinRatio));  // what plays, not what was asked
-    CHECK(planSync(loop(60), host(300)).ratio == Catch::Approx(Stretcher::kMaxRatio));
+    const SyncPlan slow = planSync(loop(120), host(20));
+    CHECK(slow.ratio == Catch::Approx(Stretcher::kMinRatio)); // what plays, not what was asked
+    CHECK(slow.tempoClamped);
+    const SyncPlan fast = planSync(loop(60), host(300));
+    CHECK(fast.ratio == Catch::Approx(Stretcher::kMaxRatio));
+    CHECK(fast.tempoClamped);
+    CHECK_FALSE(planSync(loop(120), host(30)).tempoClamped); // exactly 0.25x is in range
     const SyncPlan p = planSync(loop(100), host(120));
     CHECK(p.tempoSynced);
     CHECK_FALSE(p.tempoUnsure);
+    CHECK_FALSE(p.tempoClamped);
 }
 
 TEST_CASE("planSync leaves one-shots, unknown tempos and a switched-off sync alone", "[sync]")
