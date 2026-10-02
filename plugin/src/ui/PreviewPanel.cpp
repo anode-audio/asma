@@ -140,6 +140,8 @@ PreviewPanel::PreviewPanel()
 
 void PreviewPanel::setFile(const juce::String& name, const juce::String& line)
 {
+    // The editor's timer says this 30 times a second: only a change repaints.
+    if (name == name_ && line == line_) return;
     name_ = name;
     line_ = line;
     const bool any = name.isNotEmpty();
@@ -176,8 +178,9 @@ void PreviewPanel::setTempo(bool on, const ChipText& chip)
 {
     tempo_.setToggleState(on, juce::dontSendNotification);
     tempo_.setDot(theme::colourFor(chip.tone), on && chip.tone != Tone::Muted);
+    const auto before = tempo_.detail();
     tempo_.setDetail(juce::String::fromUTF8(chip.text.c_str()), theme::colourFor(chip.tone));
-    resized();
+    if (tempo_.detail() != before) resized(); // a longer detail widens the chip
 }
 
 void PreviewPanel::setKey(bool on, const std::string& key, const std::string& status)
@@ -187,8 +190,9 @@ void PreviewPanel::setKey(bool on, const std::string& key, const std::string& st
     key_.setDot(theme::amber, on);
     juce::String detail = on && !key.empty() ? juce::String(key) : juce::String("off");
     if (on && !status.empty()) detail << " " << juce::String::fromUTF8(status.c_str());
+    const auto before = key_.detail();
     key_.setDetail(detail, on ? theme::text : theme::muted);
-    resized();
+    if (key_.detail() != before) resized();
 }
 
 void PreviewPanel::chooseKey(int item)
@@ -214,8 +218,9 @@ void PreviewPanel::setQuantise(double beats)
     quantise_ = beats;
     start_.setToggleState(beats > 0.0, juce::dontSendNotification);
     start_.setDot(theme::amber, beats > 0.0);
+    const auto before = start_.detail();
     start_.setDetail(beats >= 4.0 ? "bar" : (beats >= 1.0 ? "beat" : "now"), beats > 0.0 ? theme::text : theme::muted);
-    resized();
+    if (start_.detail() != before) resized();
 }
 
 void PreviewPanel::paint(juce::Graphics& g)

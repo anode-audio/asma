@@ -169,3 +169,32 @@ TEST_CASE("the footer offers to clear renders only when there are some", "[foote
     settle();
     CHECK(clears == 1);
 }
+
+TEST_CASE("the preview panel leaves the screen alone when nothing it shows changed", "[preview]")
+{
+    const juce::ScopedJuceInitialiser_GUI gui;
+    struct Counting : PreviewPanel {
+        int paints = 0;
+        void paint(juce::Graphics& g) override
+        {
+            ++paints;
+            PreviewPanel::paint(g);
+        }
+    } panel;
+    panel.setBounds(0, 0, 964, 236);
+    panel.setVisible(true); // a hidden component never repaints
+    panel.addToDesktop(0);
+    const auto show = [&] {
+        panel.setFile("Bass_Loop_Am_120.wav", "Loops");
+        panel.setTempo(true, {"120 \u2192 180 \u00b7 x1.50", app::Tone::Synced});
+        panel.setKey(false, {}, {});
+        if (auto* peer = panel.getPeer()) peer->performAnyPendingRepaintsNow();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(30); // where paints happen
+    };
+    show();
+    const int first = panel.paints;
+    REQUIRE(first > 0); // on screen and painting
+    for (int i = 0; i < 10; ++i) show(); // what the editor's timer does, 30 times a second
+    CHECK(panel.paints == first);
+    panel.removeFromDesktop();
+}
