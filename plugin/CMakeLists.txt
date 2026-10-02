@@ -12,6 +12,9 @@ target_link_libraries(asma_ui INTERFACE
   juce::juce_audio_processors
   juce::juce_gui_basics
   juce::juce_recommended_config_flags)
+# The UI's text is UTF-8 in the source (arrows, middle dots): MSVC must read
+# it so and keep it so, whatever the system code page.
+target_compile_options(asma_ui INTERFACE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 target_compile_definitions(asma_ui INTERFACE
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0
