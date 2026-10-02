@@ -126,12 +126,22 @@ fs::path RenderStore::fileFor(const fs::path& source, const RenderSettings& sett
     return out;
 }
 
+namespace {
+
+// A render, or what an interrupted one left: nothing else in the folder is ours.
+bool isRender(const fs::path& path)
+{
+    return path.extension() == ".wav" || toUtf8(path.filename()).find(".wav.tmp") != std::string::npos;
+}
+
+} // namespace
+
 std::uintmax_t RenderStore::bytes() const
 {
     std::uintmax_t total = 0;
     std::error_code ec;
     for (const auto& e : fs::directory_iterator(dir_, ec)) {
-        if (!e.is_regular_file(ec)) continue;
+        if (!isRender(e.path()) || !e.is_regular_file(ec)) continue;
         const auto size = e.file_size(ec);
         if (!ec) total += size;
     }
@@ -142,11 +152,8 @@ std::size_t RenderStore::clear()
 {
     std::size_t removed = 0;
     std::error_code ec;
-    for (const auto& e : fs::directory_iterator(dir_, ec)) {
-        const std::string name = toUtf8(e.path().filename());
-        const bool render = e.path().extension() == ".wav" || name.find(".wav.tmp") != std::string::npos;
-        if (render && e.is_regular_file(ec) && fs::remove(e.path(), ec)) ++removed;
-    }
+    for (const auto& e : fs::directory_iterator(dir_, ec))
+        if (isRender(e.path()) && e.is_regular_file(ec) && fs::remove(e.path(), ec)) ++removed;
     return removed;
 }
 

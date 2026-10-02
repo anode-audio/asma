@@ -56,7 +56,8 @@ public:
     static std::string fileName(std::string_view contentHash, const RenderSettings& settings, int sampleRate);
 
     const std::filesystem::path& dir() const { return dir_; }
-    // Bytes on disk, temporary files left by an interrupted render included.
+    // Bytes of renders on disk, temporary files left by an interrupted render
+    // included; other files in the folder (a .DS_Store) are not counted.
     std::uintmax_t bytes() const;
     // Deletes every render and leftover temporary file; returns how many.
     std::size_t clear();

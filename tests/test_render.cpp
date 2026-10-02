@@ -173,6 +173,16 @@ TEST_CASE("RenderStore keeps every render until it is cleared", "[render]")
     CHECK(fs::exists(src)); // only renders go
 }
 
+TEST_CASE("RenderStore counts only renders, not what the system leaves in the folder", "[render]")
+{
+    TempDir dir;
+    RenderStore store(dir.path() / "renders");
+    test::writeBytes(dir.path() / "renders" / ".DS_Store", "Finder was here");
+    CHECK(store.bytes() == 0);
+    CHECK(store.clear() == 0);
+    CHECK(fs::exists(dir.path() / "renders" / ".DS_Store")); // not ours to delete
+}
+
 TEST_CASE("RenderStore lives in the data directory, not a cache", "[render]")
 {
     TempDir dir;
