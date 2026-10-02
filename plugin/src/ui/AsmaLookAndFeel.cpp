@@ -67,9 +67,14 @@ void AsmaLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& butt
         return;
     }
     // Inside a segmented switch the group draws the frame; a segment draws
-    // its fill and the line that parts it from the one before.
+    // its fill, rounded on the switch's outer corners, and the line that
+    // parts it from the one before.
+    const bool first = segment == "first", last = segment == "last";
+    juce::Path shape;
+    shape.addRoundedRectangle(r.getX(), r.getY(), r.getWidth(), r.getHeight(), theme::kRadius, theme::kRadius, first, last,
+                              first, last);
     g.setColour(fill);
-    g.fillRect(r);
+    g.fillPath(shape);
     if (segment == "middle" || segment == "last") {
         g.setColour(theme::border);
         g.fillRect(r.withWidth(1.0f));
