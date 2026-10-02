@@ -344,3 +344,22 @@ TEST_CASE("Clear renders says when a render could not be deleted", "[editor]")
     CHECK(rig.editor->footer().clearButton().isVisible()); // still there to try again
 }
 #endif
+
+TEST_CASE("the footer and the drag agree on the tempo before any audio has run", "[editor]")
+{
+    test::LibraryFixture f;
+    f.scan();
+    const juce::ScopedJuceInitialiser_GUI gui;
+    AsmaProcessor p(AsmaProcessor::Mode::Standalone); // no audio device yet: no blocks, no transport
+    app::PluginState s = p.pluginState();
+    s.sync.hostBpm = 180.0;
+    p.setPluginState(s);
+    std::unique_ptr<AsmaEditor> editor(dynamic_cast<AsmaEditor*>(p.createEditorAndMakeActive()));
+    editor->searchBox().setText("bass", true);
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    editor->table().selectRow(0);
+    editor->poll();
+    CHECK(editor->footer().dragText() == "Drag out renders: stretched to 180 BPM");
+    CHECK(editor->preview().tempoChip().detail() == juce::String::fromUTF8("120 \u2192 180 \u00b7 x1.50"));
+    p.editorBeingDeleted(editor.get());
+}

@@ -349,7 +349,7 @@ void AsmaEditor::updateReadouts()
     }
     preview_.setPlaying(status.playing);
     audio::SyncSettings sync = state.sync;
-    sync.hostBpm = processor_.hostBpm();
+    sync.hostBpm = processor_.tempoInForce();
     preview_.setTempo(state.sync.tempo, selectedRow_ >= 0 ? tempoChip(selectedInfo_, sync, current && status.failed)
                                                           : ChipText{state.sync.tempo ? "" : "off", Tone::Muted});
     std::string keyStatus;
@@ -441,7 +441,7 @@ bool AsmaEditor::shouldDropFilesWhenDraggedExternally(const juce::DragAndDropTar
     const auto path = browser_.path(row);
     const PluginState state = processor_.pluginState();
     audio::SyncSettings sync = state.sync;
-    if (processor_.hostBpm() > 0.0) sync.hostBpm = processor_.hostBpm();
+    sync.hostBpm = processor_.tempoInForce();
     const audio::RenderSettings settings =
         dragSettings(state.edits, audio::planSync(browser_.info(row), sync), static_cast<int>(processor_.sampleRate()));
     std::filesystem::path file = path;

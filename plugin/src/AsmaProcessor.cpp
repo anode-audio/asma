@@ -143,6 +143,14 @@ void AsmaProcessor::setEdits(const audio::Edits& edits)
     engine_.setEdits(edits);
 }
 
+double AsmaProcessor::tempoInForce()
+{
+    if (const double host = hostBpm(); host > 0.0) return host;
+    if (!standalone_) return 0.0;
+    if (linkOn_.load(std::memory_order_relaxed) && link_) return link_->captureAppSessionState().tempo();
+    return manualBpm_.load(std::memory_order_relaxed);
+}
+
 void AsmaProcessor::setManualBpm(double bpm)
 {
     audio::SyncSettings sync;

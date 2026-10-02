@@ -78,6 +78,10 @@ public:
     const std::filesystem::path& libraryPath() const { return libraryPath_; }
     // The host's tempo in the last block, 0 when it gave none.
     double hostBpm() const { return hostBpm_.load(std::memory_order_relaxed); }
+    // Message thread. The tempo sync works to: the last block's, else, in the
+    // standalone before any audio has run, Link's or the manual one. 0 for
+    // none. The footer and the drag both ask here, so they always agree.
+    double tempoInForce();
     double sampleRate() const { return sampleRate_; }
 
     // The standalone has no host: its tempo is Ableton Link's when Link is
