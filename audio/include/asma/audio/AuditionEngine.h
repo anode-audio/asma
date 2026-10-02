@@ -33,6 +33,7 @@ struct EngineStatus {
     double semitones = 0.0;
     bool tempoSynced = false, keySynced = false;
     bool tempoUnsure = false, keyUnsure = false; // show "?"
+    bool failed = false; // the selection's file could not be opened
     int voices = 0;
 };
 
@@ -58,6 +59,9 @@ public:
 
     // Control thread.
     std::uint64_t select(const std::filesystem::path& path, SampleInfo info, bool autoplay);
+    // The newest selection's generation; status() reports on it once the
+    // audio thread holds it.
+    std::uint64_t selected() const { return selected_.load(); }
     void play();
     void stop();
     void setEdits(const Edits& edits);

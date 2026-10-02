@@ -342,12 +342,17 @@ TEST_CASE("AuditionEngine silences the old sample when auto-play lands on a brok
     loop.isLoop = true;
     rig.engine.select(rig.file("a.wav", counting(4800)), loop, true);
     rig.run(1024);
+    CHECK_FALSE(rig.engine.status().failed);
     const auto bad = rig.dir.path() / "bad.wav";
     test::writeBytes(bad, "RIFF\x04\x00\x00\x00WAVEjunk");
-    rig.engine.select(bad, {}, true);
+    const std::uint64_t generation = rig.engine.select(bad, {}, true);
+    CHECK(rig.engine.selected() == generation);
     const auto out = rig.run(1024);
     CHECK(out[kFade + 10] == 0.0f);
-    CHECK_FALSE(rig.engine.status().playing);
+    const EngineStatus status = rig.engine.status();
+    CHECK_FALSE(status.playing);
+    CHECK(status.generation == generation);
+    CHECK(status.failed); // the UI says it cannot read the file
 }
 
 TEST_CASE("AuditionEngine waits for a trimmed start deep in a long file to load", "[engine]")

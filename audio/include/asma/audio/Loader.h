@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -39,7 +40,10 @@ class Loader {
 public:
     static constexpr std::uint64_t kNone = std::numeric_limits<std::uint64_t>::max();
 
-    explicit Loader(PreviewCache& cache) : cache_(cache) {}
+    // Opens a file for playing; openSource unless a test says otherwise.
+    using Opener = std::function<std::shared_ptr<SampleSource>(const std::filesystem::path&, PreviewCache&)>;
+
+    explicit Loader(PreviewCache& cache, Opener opener = {}) : cache_(cache), opener_(std::move(opener)) {}
     ~Loader();
     Loader(const Loader&) = delete;
     Loader& operator=(const Loader&) = delete;
@@ -59,7 +63,8 @@ public:
 
     // Loads the pending selection, hands finished previews to the audio
     // thread, feeds streams and frees what the audio thread let go. Returns
-    // whether it did anything.
+    // whether it did anything. A load that throws, whatever it throws, gives
+    // a preview with no source and the reason.
     bool pump();
 
     // Previews alive, for tests.
@@ -77,7 +82,11 @@ private:
         bool delivered = false;
     };
 
+    // Opens the file and measures what playing it needs. Throws.
+    void load(Preview& preview, const std::filesystem::path& path);
+
     PreviewCache& cache_;
+    Opener opener_;
     std::mutex requestMutex_;
     std::condition_variable wake_;
     std::optional<Request> request_;

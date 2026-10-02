@@ -62,6 +62,21 @@ void Loader::release(std::uint64_t oldestInUse)
     inUseFrom_.store(std::min(oldestInUse, seen_.load() + 1));
 }
 
+void Loader::load(Preview& preview, const std::filesystem::path& path)
+{
+    preview.source = opener_ ? opener_(path, cache_) : openSource(path, cache_);
+    // Not analysed yet: a short file is cheap to measure for gain matching.
+    if (const auto* memory = dynamic_cast<const MemorySource*>(preview.source.get()); memory && !preview.info.lufs) {
+        const AudioBuffer& b = memory->buffer();
+        std::vector<float> mono(b.channels[0]);
+        if (b.channelCount() == 2)
+            for (std::size_t i = 0; i < mono.size(); ++i) mono[i] = 0.5f * (mono[i] + b.channels[1][i]);
+        const Loudness l = measureLoudness(mono, b.sampleRate);
+        preview.info.lufs = l.lufs;
+        preview.info.peak = l.peak;
+    }
+}
+
 bool Loader::pump()
 {
     bool did = false;
@@ -76,20 +91,16 @@ bool Loader::pump()
         preview->generation = request->generation;
         preview->info = std::move(request->info);
         preview->autoplay = request->autoplay;
+        // Nothing a load throws may escape: it would end the loader thread,
+        // and the whole host with it.
         try {
-            preview->source = openSource(request->path, cache_);
-        } catch (const ProbeError& e) {
+            load(*preview, request->path);
+        } catch (const std::exception& e) {
+            preview->source.reset();
             preview->error = e.what();
-        }
-        // Not analysed yet: a short file is cheap to measure for gain matching.
-        if (const auto* memory = dynamic_cast<const MemorySource*>(preview->source.get()); memory && !preview->info.lufs) {
-            const AudioBuffer& b = memory->buffer();
-            std::vector<float> mono(b.channels[0]);
-            if (b.channelCount() == 2)
-                for (std::size_t i = 0; i < mono.size(); ++i) mono[i] = 0.5f * (mono[i] + b.channels[1][i]);
-            const Loudness l = measureLoudness(mono, b.sampleRate);
-            preview->info.lufs = l.lufs;
-            preview->info.peak = l.peak;
+        } catch (...) {
+            preview->source.reset();
+            preview->error = "unknown error";
         }
         const std::lock_guard lock(liveMutex_);
         live_.push_back({std::move(preview), false});

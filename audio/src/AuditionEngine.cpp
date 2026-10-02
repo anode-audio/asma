@@ -10,7 +10,7 @@ namespace asma::audio {
 
 namespace {
 
-enum Flags { kTempoSynced = 1, kKeySynced = 2, kTempoUnsure = 4, kKeyUnsure = 8 };
+enum Flags { kTempoSynced = 1, kKeySynced = 2, kTempoUnsure = 4, kKeyUnsure = 8, kFailed = 16 };
 
 } // namespace
 
@@ -304,7 +304,8 @@ void AuditionEngine::publish()
     statusRatio_.store(plan_.ratio, std::memory_order_relaxed);
     statusSemitones_.store(plan_.semitones, std::memory_order_relaxed);
     statusFlags_.store((plan_.tempoSynced ? kTempoSynced : 0) | (plan_.keySynced ? kKeySynced : 0)
-                           | (plan_.tempoUnsure ? kTempoUnsure : 0) | (plan_.keyUnsure ? kKeyUnsure : 0),
+                           | (plan_.tempoUnsure ? kTempoUnsure : 0) | (plan_.keyUnsure ? kKeyUnsure : 0)
+                           | (current_ && !current_->source ? kFailed : 0),
                        std::memory_order_relaxed);
     statusVoices_.store(voices_.active(), std::memory_order_relaxed);
 }
@@ -322,6 +323,7 @@ EngineStatus AuditionEngine::status() const
     s.keySynced = flags & kKeySynced;
     s.tempoUnsure = flags & kTempoUnsure;
     s.keyUnsure = flags & kKeyUnsure;
+    s.failed = flags & kFailed;
     s.voices = statusVoices_.load(std::memory_order_relaxed);
     return s;
 }

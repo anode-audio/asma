@@ -206,3 +206,41 @@ TEST_CASE("Loader runs on its own thread", "[loader]")
     REQUIRE(p);
     CHECK(p->source->frames() == 700);
 }
+
+TEST_CASE("Loader survives a load that throws anything, and loads the next", "[loader]")
+{
+    Files f;
+    PreviewCache cache;
+    int calls = 0;
+    Loader loader(cache, [&](const fs::path& path, PreviewCache& c) -> std::shared_ptr<SampleSource> {
+        ++calls;
+        if (calls == 1) throw std::runtime_error("disk on fire");
+        if (calls == 2) throw 42;
+        return openSource(path, c);
+    });
+    loader.start(); // an exception escaping the loader thread would end the test run
+    const auto next = [&] {
+        Preview* p = nullptr;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!p && std::chrono::steady_clock::now() < deadline) {
+            p = loader.takeReady();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return p;
+    };
+    loader.select(f.a);
+    Preview* p = next();
+    REQUIRE(p);
+    CHECK_FALSE(p->source);
+    CHECK(p->error == "disk on fire");
+    loader.select(f.a);
+    p = next();
+    REQUIRE(p);
+    CHECK_FALSE(p->source);
+    CHECK(p->error == "unknown error");
+    loader.select(f.b);
+    p = next();
+    REQUIRE(p);
+    REQUIRE(p->source);
+    CHECK(p->source->frames() == 700);
+}
