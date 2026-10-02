@@ -25,6 +25,7 @@ inline const juce::Colour amberLight{0xfff2bd6b};
 inline const juce::Colour cyan{0xff4fd1e6};
 inline const juce::Colour cyanDim{0xff3aa3b5};  // the waveform after the playhead
 inline const juce::Colour cyanFaint{0xff2b5c66}; // the waveform outside the trim
+inline const juce::Colour zeroLine{0xff23262b};  // the waveform's centre line
 inline const juce::Colour green{0xff7de38e};
 
 constexpr float kRadius = 4.0f;

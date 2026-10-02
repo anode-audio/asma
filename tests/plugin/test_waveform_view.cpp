@@ -155,10 +155,35 @@ TEST_CASE("a file shorter than the handles' gap keeps them in order", "[waveform
     rig.view.press(0.0f);
     rig.view.drag(1000.0f);
     rig.view.release();
-    CHECK(rig.start == 0.0);
-    CHECK(rig.end == -1.0);
+    CHECK(rig.view.trimStart() == 0.0); // nothing to trim: it stays whole
+    CHECK(rig.view.trimEnd() == -1.0);
+    CHECK(rig.changes == 0);            // and nothing restarts
     rig.view.press(999.0f);
     rig.view.drag(0.0f);
     rig.view.release();
-    CHECK(rig.start <= std::max(rig.end, 0.0));
+    CHECK(rig.view.trimStart() <= std::max(rig.view.trimEnd(), 0.0));
+}
+
+TEST_CASE("the start handle never closes the trim on a file that got shorter", "[waveform]")
+{
+    Rig rig;
+    rig.view.setTrim(2.0, 50.0); // the end saved past what the file now has
+    rig.view.press(200.0f);
+    rig.view.drag(1000.0f); // all the way right
+    rig.view.release();
+    CHECK(rig.start <= 10.0 - WaveformView::kMinGap); // something is always kept
+}
+
+TEST_CASE("a click on a handle that does not move it changes nothing", "[waveform]")
+{
+    Rig rig;
+    rig.view.setTrim(2.0, 6.0);
+    rig.view.press(200.0f);
+    rig.view.release();
+    rig.view.press(599.0f);
+    rig.view.release();
+    CHECK(rig.changes == 0); // nothing restarts
+    rig.view.setTrim(0.0, -1.0);
+    rig.view.doubleClick(1.0f); // already at the edge
+    CHECK(rig.changes == 0);
 }

@@ -58,6 +58,8 @@ WaveformView::Handle WaveformView::handleAt(float x) const
 void WaveformView::press(float x)
 {
     dragging_ = handleAt(x);
+    pressStart_ = start_;
+    pressEnd_ = end_;
     if (dragging_ == Handle::None && onPlay) onPlay();
 }
 
@@ -75,7 +77,9 @@ void WaveformView::release()
     if (dragging_ == Handle::None) return;
     dragging_ = Handle::None;
     if (end_ >= length()) end_ = -1.0; // dragged to the end: untrimmed there
-    if (onTrimChanged) onTrimChanged(start_, end_);
+    // A press that moved nothing restarts nothing.
+    const bool moved = start_ < pressStart_ || start_ > pressStart_ || end_ < pressEnd_ || end_ > pressEnd_;
+    if (moved && onTrimChanged) onTrimChanged(start_, end_);
 }
 
 void WaveformView::doubleClick(float x)
@@ -83,8 +87,13 @@ void WaveformView::doubleClick(float x)
     const Handle h = handleAt(x);
     dragging_ = Handle::None;
     if (h == Handle::None) return;
-    if (h == Handle::Start) start_ = 0.0;
-    else end_ = -1.0;
+    if (h == Handle::Start) {
+        if (start_ <= 0.0) return; // already at the edge
+        start_ = 0.0;
+    } else {
+        if (end_ < 0.0) return;
+        end_ = -1.0;
+    }
     repaint();
     if (onTrimChanged) onTrimChanged(start_, end_);
 }
@@ -101,7 +110,7 @@ void WaveformView::paint(juce::Graphics& g)
     g.setColour(theme::ground);
     g.fillRoundedRectangle(bounds, theme::kRadius);
     const float mid = std::round(bounds.getCentreY());
-    g.setColour(juce::Colour(0xff23262b));
+    g.setColour(theme::zeroLine);
     g.fillRect(bounds.getX(), mid, bounds.getWidth(), 1.0f);
 
     if (overview_ && overview_->frames > 0 && overview_->channels() > 0) {

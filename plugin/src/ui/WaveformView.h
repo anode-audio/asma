@@ -4,6 +4,7 @@
 #include "asma/audio/Overview.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -51,7 +52,8 @@ public:
 private:
     enum class Handle { None, Start, End };
     double length() const { return overview_ ? overview_->seconds() : 0.0; }
-    double endSeconds() const { return end_ < 0.0 ? length() : end_; }
+    // A saved end past a file that has since got shorter stops at its end.
+    double endSeconds() const { return std::min(end_ < 0.0 ? length() : end_, length()); }
     Handle handleAt(float x) const;
     juce::Rectangle<float> wave() const { return getLocalBounds().toFloat(); }
 
@@ -60,6 +62,7 @@ private:
     double end_ = -1.0;
     std::optional<double> playhead_;
     Handle dragging_ = Handle::None;
+    double pressStart_ = 0.0, pressEnd_ = -1.0; // the trim when the press began
 };
 
 } // namespace asma::app
