@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include "asma/audio/Overview.h"
 #include "asma/audio/PreviewCache.h"
 #include "asma/audio/SampleInfo.h"
 #include "asma/audio/SampleSource.h"
 #include "asma/audio/SpscQueue.h"
+#include "asma/core/AudioReader.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -67,8 +69,16 @@ public:
     // a preview with no source and the reason.
     bool pump();
 
+    // The newest selection's waveform once it is built, else null: at once
+    // for a file decoded whole, after a read-through that follows playback
+    // for a streamed one. Any thread.
+    std::shared_ptr<const Overview> overview(std::uint64_t generation) const;
+
     // Previews alive, for tests.
     std::size_t liveCount() const;
+
+    // Frames the read-through for an overview reads per pump().
+    static constexpr std::uint64_t kOverviewChunk = 65536;
 
 private:
     struct Request {
@@ -81,9 +91,19 @@ private:
         std::shared_ptr<Preview> preview;
         bool delivered = false;
     };
+    // The read-through of a streamed file for its overview.
+    struct OverviewJob {
+        std::uint64_t generation = 0;
+        std::filesystem::path path;
+        std::unique_ptr<AudioReader> reader;
+        std::optional<OverviewBuilder> builder;
+    };
 
     // Opens the file and measures what playing it needs. Throws.
     void load(Preview& preview, const std::filesystem::path& path);
+    // Reads the next chunk for the overview; false when there was nothing to do.
+    bool stepOverview(std::uint64_t newest);
+    void publishOverview(std::uint64_t generation, Overview overview);
 
     PreviewCache& cache_;
     Opener opener_;
@@ -97,6 +117,12 @@ private:
     SpscQueue<Preview*, 16> ready_;
     std::atomic<std::uint64_t> seen_{0};         // newest generation takeReady popped
     std::atomic<std::uint64_t> inUseFrom_{1};    // nothing older is in use
+
+    std::optional<OverviewJob> overviewJob_; // pump() only
+    std::vector<std::vector<float>> overviewScratch_;
+    mutable std::mutex overviewMutex_;
+    std::uint64_t overviewGeneration_ = 0;
+    std::shared_ptr<const Overview> overview_;
 
     std::thread thread_;
     std::atomic<bool> stop_{false};

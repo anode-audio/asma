@@ -75,6 +75,55 @@ void Loader::load(Preview& preview, const std::filesystem::path& path)
         preview.info.lufs = l.lufs;
         preview.info.peak = l.peak;
     }
+    if (const auto* memory = dynamic_cast<const MemorySource*>(preview.source.get()))
+        publishOverview(preview.generation, makeOverview(memory->buffer()));
+    else if (preview.source)
+        overviewJob_ = OverviewJob{preview.generation, path, nullptr, std::nullopt};
+}
+
+bool Loader::stepOverview(std::uint64_t newest)
+{
+    if (!overviewJob_) return false;
+    if (overviewJob_->generation != newest) { // the selection moved on
+        overviewJob_.reset();
+        return true;
+    }
+    // A failure here only costs the picture: the preview plays on.
+    try {
+        OverviewJob& job = *overviewJob_;
+        if (!job.reader) {
+            job.reader = AudioReader::open(job.path);
+            job.builder.emplace(static_cast<std::int64_t>(job.reader->frames()), job.reader->channels(),
+                                job.reader->sampleRate());
+            overviewScratch_.assign(static_cast<std::size_t>(job.reader->channels()), std::vector<float>(kOverviewChunk));
+        }
+        std::vector<float*> out;
+        for (auto& c : overviewScratch_) out.push_back(c.data());
+        const std::uint64_t got = job.reader->read(out.data(), kOverviewChunk);
+        std::vector<const float*> in(out.begin(), out.end());
+        job.builder->add(in.data(), static_cast<std::int64_t>(got));
+        if (job.builder->done() || got == 0) {
+            publishOverview(job.generation, job.builder->overview());
+            overviewJob_.reset();
+        }
+    } catch (...) {
+        overviewJob_.reset();
+    }
+    return true;
+}
+
+void Loader::publishOverview(std::uint64_t generation, Overview overview)
+{
+    auto shared = std::make_shared<const Overview>(std::move(overview));
+    const std::lock_guard lock(overviewMutex_);
+    overviewGeneration_ = generation;
+    overview_ = std::move(shared);
+}
+
+std::shared_ptr<const Overview> Loader::overview(std::uint64_t generation) const
+{
+    const std::lock_guard lock(overviewMutex_);
+    return generation == overviewGeneration_ ? overview_ : nullptr;
 }
 
 bool Loader::pump()
@@ -91,6 +140,7 @@ bool Loader::pump()
         preview->generation = request->generation;
         preview->info = std::move(request->info);
         preview->autoplay = request->autoplay;
+        overviewJob_.reset(); // a new selection: the old read-through is moot
         // Nothing a load throws may escape: it would end the loader thread,
         // and the whole host with it.
         try {
@@ -120,6 +170,8 @@ bool Loader::pump()
             if (auto* stream = dynamic_cast<StreamSource*>(l.preview->source.get())) did |= stream->fill() > 0;
 
     const Preview* newest = live_.empty() ? nullptr : live_.back().preview.get();
+    // After the streams: playing comes before drawing.
+    did |= stepOverview(newest ? newest->generation : 0);
     const auto before = live_.size();
     std::erase_if(live_, [&](const Live& l) {
         if (!l.delivered) return l.preview.get() != newest; // superseded before the audio thread saw it

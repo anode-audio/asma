@@ -13,6 +13,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <vector>
 
 namespace asma::audio {
@@ -62,6 +63,8 @@ public:
     // The newest selection's generation; status() reports on it once the
     // audio thread holds it.
     std::uint64_t selected() const { return selected_.load(); }
+    // The newest selection's waveform once the loader has built it. Any thread.
+    std::shared_ptr<const Overview> overview() const { return loader_.overview(selected()); }
     void play();
     void stop();
     void setEdits(const Edits& edits);

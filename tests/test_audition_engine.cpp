@@ -371,3 +371,17 @@ TEST_CASE("AuditionEngine waits for a trimmed start deep in a long file to load"
     // cutting in once the block turns up.
     CHECK(out[first] < counting(800001)[800000] / 2.0f);
 }
+
+TEST_CASE("AuditionEngine hands the UI the selection's waveform", "[engine]")
+{
+    Rig rig;
+    rig.engine.select(rig.file("a.wav", counting(4800)), {}, false);
+    CHECK_FALSE(rig.engine.overview()); // not loaded yet
+    rig.run(kBlock);
+    const auto o = rig.engine.overview();
+    REQUIRE(o);
+    CHECK(o->frames == 4800);
+    CHECK(o->max[0][Overview::kPoints - 1] == counting(4800)[4799]);
+    rig.engine.select(rig.file("b.wav", counting(2400)), {}, false);
+    CHECK_FALSE(rig.engine.overview()); // the old one is not the selection's
+}
