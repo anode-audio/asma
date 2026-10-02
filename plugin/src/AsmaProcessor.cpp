@@ -127,6 +127,22 @@ void AsmaProcessor::setPluginState(const PluginState& given)
     }
 }
 
+std::uint64_t AsmaProcessor::select(const std::filesystem::path& path, const audio::SampleInfo& info)
+{
+    updateState([&](PluginState& s) {
+        s.selected = toUtf8(path);
+        s.edits = {};
+    });
+    engine_.setEdits({}, false); // the old sample fades out as it was
+    return engine_.select(path, info, true);
+}
+
+void AsmaProcessor::setEdits(const audio::Edits& edits)
+{
+    updateState([&](PluginState& s) { s.edits = edits; });
+    engine_.setEdits(edits);
+}
+
 void AsmaProcessor::setManualBpm(double bpm)
 {
     audio::SyncSettings sync;

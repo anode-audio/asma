@@ -67,7 +67,9 @@ public:
     std::shared_ptr<const Overview> overview() const { return loader_.overview(selected()); }
     void play();
     void stop();
-    void setEdits(const Edits& edits);
+    // An edit restarts what plays; restart false keeps it playing as it is
+    // and applies the edits from the next start (a new selection's).
+    void setEdits(const Edits& edits, bool restart = true);
     // hostBpm here is the standalone's manual tempo; a transport tempo wins.
     void setSync(const SyncSettings& sync);
     void setGainMatch(bool on);

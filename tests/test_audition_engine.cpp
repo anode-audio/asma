@@ -385,3 +385,21 @@ TEST_CASE("AuditionEngine hands the UI the selection's waveform", "[engine]")
     rig.engine.select(rig.file("b.wav", counting(2400)), {}, false);
     CHECK_FALSE(rig.engine.overview()); // the old one is not the selection's
 }
+
+TEST_CASE("AuditionEngine can take edits for the next selection without restarting this one", "[engine]")
+{
+    Rig rig;
+    const auto samples = counting(48000);
+    rig.engine.select(rig.file("a.wav", samples), {}, true);
+    rig.run(2048);
+    Edits reversed;
+    reversed.direction = Direction::Reverse;
+    rig.engine.setEdits(reversed, false);
+    auto out = rig.run(kBlock);
+    CHECK(out[0] == samples[2048]); // carries on forward, no fade
+    CHECK(out[kBlock - 1] == samples[2048 + kBlock - 1]);
+    rig.engine.select(rig.file("b.wav", samples), {}, true);
+    out = rig.run(1024);
+    // The old one fades out, then the new one plays backwards from its end.
+    CHECK(out[2 * kFade + 10] == samples[47999 - kFade - 10]);
+}

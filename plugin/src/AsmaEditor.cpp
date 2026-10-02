@@ -268,9 +268,7 @@ void AsmaEditor::selectedRowsChanged(int lastRowSelected)
 {
     if (quietSelection_ || lastRowSelected < 0) return;
     scanMessage_.clear();
-    const auto path = browser_.path(lastRowSelected);
-    processor_.engine().select(path, browser_.info(lastRowSelected), true);
-    processor_.updateState([&](PluginState& s) { s.selected = toUtf8(path); });
+    processor_.select(browser_.path(lastRowSelected), browser_.info(lastRowSelected));
     updateStatus();
 }
 

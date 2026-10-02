@@ -53,6 +53,13 @@ public:
 
     audio::AuditionEngine& engine() { return engine_; }
 
+    // Message thread. Auditions a file as it is, without the last one's edits,
+    // and remembers it as the project's selection.
+    std::uint64_t select(const std::filesystem::path& path, const audio::SampleInfo& info);
+    // Message thread. The selection's edits: saved with the project and
+    // applied at once, restarting what plays.
+    void setEdits(const audio::Edits& edits);
+
     // Any thread but the audio thread. Setting applies the settings to the
     // engine and selects the saved sample again, without playing it.
     PluginState pluginState() const;

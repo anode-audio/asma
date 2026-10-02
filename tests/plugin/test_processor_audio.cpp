@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "PluginTestUtil.h"
 #include "Signals.h"
+#include "asma/core/Fs.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -113,4 +114,25 @@ TEST_CASE("a quantised start lands on the bar inside a block split by MIDI", "[p
     while (first < kBlock && rig.buffer.getSample(0, first) == 0.0f) ++first;
     CHECK(first == 240);
     rig.p.setPlayHead(nullptr);
+}
+
+TEST_CASE("edits belong to the selected sample", "[processor]")
+{
+    Rig rig;
+    const auto a = rig.dir.path() / "a.wav";
+    const auto b = rig.dir.path() / "b.wav";
+    asma::test::writeWavFloat(a, kRate, {constant(kRate, 0.5f)});
+    asma::test::writeWavFloat(b, kRate, {constant(kRate, 0.25f)});
+    rig.p.select(a, {});
+    asma::audio::Edits e;
+    e.direction = asma::audio::Direction::Reverse;
+    e.trimStart = 0.1;
+    rig.p.setEdits(e);
+    CHECK(rig.p.pluginState().edits.direction == asma::audio::Direction::Reverse); // saved with the project
+    CHECK(rig.p.pluginState().edits.trimStart == 0.1);
+    rig.p.select(b, {});
+    const auto state = rig.p.pluginState();
+    CHECK(state.edits.direction == asma::audio::Direction::Forward); // b plays as it is
+    CHECK(state.edits.trimStart == 0.0);
+    CHECK(fs::equivalent(asma::fromUtf8(state.selected), b));
 }

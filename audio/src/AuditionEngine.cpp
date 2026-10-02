@@ -54,11 +54,12 @@ void AuditionEngine::stop()
     push(c);
 }
 
-void AuditionEngine::setEdits(const Edits& edits)
+void AuditionEngine::setEdits(const Edits& edits, bool restart)
 {
     Command c;
     c.type = Command::Type::Edits;
     c.edits = edits;
+    c.flag = restart;
     push(c);
 }
 
@@ -103,7 +104,7 @@ void AuditionEngine::handle(const Command& c)
         break;
     case Command::Type::Edits:
         edits_ = c.edits;
-        if (sounding && !(state_ == State::Stopping && !restartAfterFade_)) requestStart(0);
+        if (c.flag && sounding && !(state_ == State::Stopping && !restartAfterFade_)) requestStart(0);
         break;
     case Command::Type::Sync: {
         // A new manual tempo alone is followed as the loop plays, like a host
