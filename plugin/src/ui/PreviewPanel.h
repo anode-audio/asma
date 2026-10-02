@@ -45,7 +45,8 @@ public:
     void chooseKey(int item);
     static const juce::StringArray& keys();
 
-    // "Loops / Bass · 44.1 kHz · stereo · 8.00 s"; parts that are unknown are left out.
+    // "Loops / Bass · 44.1 kHz · stereo · 8.00 s" (a long file: "5:01"); parts
+    // that are unknown are left out.
     static juce::String fileLine(const std::string& folder, int sampleRate, int channels, double seconds);
 
     WaveformView& waveform() { return waveform_; }

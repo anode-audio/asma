@@ -27,5 +27,8 @@ std::string bpmText(double bpm);
 std::string ratioText(double ratio);
 // Seconds to hundredths, with the unit: "6.80 s".
 std::string secondsText(double seconds);
+// A length as a person reads it: under a minute as secondsText ("7.38 s"),
+// from a minute up as a clock in whole seconds ("5:01", "1:02:05").
+std::string lengthText(double seconds);
 
 } // namespace asma::app

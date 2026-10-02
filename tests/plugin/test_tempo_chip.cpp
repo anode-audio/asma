@@ -71,3 +71,13 @@ TEST_CASE("tempos and ratios read the same in every locale", "[chip]")
     CHECK(app::ratioText(1.006) == "1.01"); // rounds, never truncates
     CHECK(app::secondsText(6.8) == "6.80 s");
 }
+
+TEST_CASE("lengths of a minute or more read as a clock", "[chip]")
+{
+    CHECK(app::lengthText(7.38) == "7.38 s"); // under a minute: as before
+    CHECK(app::lengthText(59.994) == "59.99 s");
+    CHECK(app::lengthText(59.996) == "1:00"); // would round to 60.00 s
+    CHECK(app::lengthText(300.69) == "5:01");
+    CHECK(app::lengthText(605.0) == "10:05");
+    CHECK(app::lengthText(3725.4) == "1:02:05");
+}

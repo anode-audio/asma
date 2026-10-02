@@ -22,6 +22,15 @@ std::string ratioText(double ratio)
 
 std::string secondsText(double seconds) { return ratioText(seconds) + " s"; }
 
+std::string lengthText(double seconds)
+{
+    if (std::llround(seconds * 100.0) < 6000) return secondsText(seconds); // under 60.00 s as shown
+    const long long total = std::llround(seconds);
+    const long long h = total / 3600, m = total / 60 % 60, s = total % 60;
+    const auto two = [](long long v) { return (v < 10 ? "0" : "") + std::to_string(v); };
+    return h > 0 ? std::to_string(h) + ":" + two(m) + ":" + two(s) : std::to_string(m) + ":" + two(s);
+}
+
 ChipText tempoChip(const audio::SampleInfo& info, const audio::SyncSettings& sync, bool failed)
 {
     if (failed) return {"can't read this file", Tone::Warning};

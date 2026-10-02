@@ -405,7 +405,7 @@ void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, in
     case kBpm: text = r.bpm ? utf8(bpmText(*r.bpm)) : juce::String(); break;
     case kKey: text = r.key ? utf8(*r.key) : juce::String(); break;
     case kLength:
-        text = utf8(secondsText(r.duration));
+        text = utf8(lengthText(r.duration));
         colour = theme::muted;
         break;
     default: break;

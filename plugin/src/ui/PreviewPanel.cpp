@@ -67,7 +67,7 @@ juce::String PreviewPanel::fileLine(const std::string& folder, int sampleRate, i
     }
     if (channels == 1) parts.add("mono");
     if (channels == 2) parts.add("stereo");
-    if (seconds > 0.0) parts.add(juce::String::fromUTF8(secondsText(seconds).c_str()));
+    if (seconds > 0.0) parts.add(juce::String::fromUTF8(lengthText(seconds).c_str()));
     return parts.joinIntoString(juce::String::fromUTF8(" · "));
 }
 

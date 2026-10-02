@@ -310,9 +310,11 @@ areas blanked. The editor is built to match it.
 - **Chip row (3c2b):** facet chips (type, BPM range, key, instrument, duration,
   rating) and "Save search", between the top bar and the table.
 - **Centre:** virtualised `TableListBox` (favourite, name, type, BPM, key,
-  length, rating, tags); sortable, resizable, fully keyboard driven. When there
-  is no library, or it is outdated or unreadable, the table area says so (with
-  "Add folder…" in the standalone) instead of a status line.
+  length, rating, tags); sortable, resizable, fully keyboard driven. Lengths
+  under a minute read in seconds ("7.38 s"), longer ones as a clock ("5:01",
+  "1:02:05"), here and in the preview's file line. When there is no library, or
+  it is outdated or unreadable, the table area says so (with "Add folder…" in
+  the standalone) instead of a status line.
 - **Bottom panel:** the selected file's name and format line; the waveform with
   trim handles, the trimmed-off parts dimmed and a playhead; and the preview
   controls: play/stop, a direction switch (forward, reverse, ping-pong), loop

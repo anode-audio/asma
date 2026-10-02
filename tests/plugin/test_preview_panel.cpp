@@ -41,6 +41,7 @@ TEST_CASE("the preview names the file's folder, rate, channels and length", "[pr
     CHECK(PreviewPanel::fileLine("Loops/Bass", 44100, 2, 8.0) == juce::String::fromUTF8("Loops / Bass · 44.1 kHz · stereo · 8.00 s"));
     CHECK(PreviewPanel::fileLine("", 48000, 1, 0.0) == juce::String::fromUTF8("48 kHz · mono"));
     CHECK(PreviewPanel::fileLine("Kicks", 0, 0, 0.25) == juce::String::fromUTF8("Kicks · 0.25 s"));
+    CHECK(PreviewPanel::fileLine("Stems", 44100, 2, 300.69) == juce::String::fromUTF8("Stems · 44.1 kHz · stereo · 5:01"));
 }
 
 TEST_CASE("the direction switch, the loop switch and the trim handles all edit", "[preview]")
