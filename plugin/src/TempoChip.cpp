@@ -20,6 +20,8 @@ std::string ratioText(double ratio)
     return std::to_string(hundredths / 100) + "." + (cents < 10 ? "0" : "") + std::to_string(cents);
 }
 
+std::string secondsText(double seconds) { return ratioText(seconds) + " s"; }
+
 ChipText tempoChip(const audio::SampleInfo& info, const audio::SyncSettings& sync, bool failed)
 {
     if (failed) return {"can't read this file", Tone::Warning};

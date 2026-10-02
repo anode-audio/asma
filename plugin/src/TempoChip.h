@@ -25,5 +25,7 @@ ChipText tempoChip(const audio::SampleInfo& info, const audio::SyncSettings& syn
 // whole number left whole ("120", "97.5"); a ratio to hundredths ("1.50").
 std::string bpmText(double bpm);
 std::string ratioText(double ratio);
+// Seconds to hundredths, with the unit: "6.80 s".
+std::string secondsText(double seconds);
 
 } // namespace asma::app

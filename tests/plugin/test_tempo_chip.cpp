@@ -69,4 +69,5 @@ TEST_CASE("tempos and ratios read the same in every locale", "[chip]")
     CHECK(app::ratioText(0.25) == "0.25");
     CHECK(app::ratioText(1.0 / 3.0) == "0.33");
     CHECK(app::ratioText(1.006) == "1.01"); // rounds, never truncates
+    CHECK(app::secondsText(6.8) == "6.80 s");
 }
