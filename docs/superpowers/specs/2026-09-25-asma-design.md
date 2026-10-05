@@ -294,21 +294,25 @@ Native JUCE, dark theme by default, palette values copied from the Anode
 identity. Plan 3c1 ships a plain browser with the behaviour below that already
 works (search, audition as the selection moves, sync switches, a status line
 with the "?" badge, drag-out, and in the standalone the tempo source and "Add
-folder"). Plan 3c2a builds the layout, the looks and the audition controls; plan
-3c2b fills in the organising parts (sidebar, facet chips, ratings, tags and
-favourites, the Similar strip, the Problems panel).
+folder"). Plan 3c2a builds the layout, the looks and the audition controls. Plan
+3c2b1 fills in browsing (sidebar, filter chips, the full table, the Similar
+list), reading the library only; plan 3c2b2 adds what writes it (ratings,
+favourites, tags, collections, saved searches, the Problems panel).
 
 The approved design (a design canvas, private to the author) is recorded in the
-repository as `tests/ui/reference/main.png`: its main artboard with the 3c2b
-areas blanked. The editor is built to match it.
+repository as `tests/ui/reference/main.png`: its main artboard filled with the
+test's demo library. The editor is built to match it. The canvas also holds the
+filter chips' popovers (approved for 3c2b1).
 
-- **Left sidebar (3c2b):** All samples, Favourites, folders (roots),
-  collections, saved searches, and a Problems entry with a count at the foot.
+- **Left sidebar (3c2b1):** All samples, Favourites, folders (roots),
+  collections and saved searches, with counts; a Problems entry with a count at
+  the foot (its panel: 3c2b2).
 - **Top bar:** the asma mark, the search field with a result count, and on the
   right the tempo source: in the standalone the Link switch, the BPM box and
   "Add folder…"; in a plugin the host's tempo, read-only ("host 124.0 BPM").
-- **Chip row (3c2b):** facet chips (type, BPM range, key, instrument, duration,
-  rating) and "Save search", between the top bar and the table.
+- **Chip row (3c2b1):** filter chips (type, BPM range, key, instrument, length,
+  rating) and "Clear all", between the top bar and the table; "Save search"
+  comes with 3c2b2.
 - **Centre:** virtualised `TableListBox` (favourite, name, type, BPM, key,
   length, rating, tags); sortable, resizable, fully keyboard driven. Lengths
   under a minute read in seconds ("7.38 s"), longer ones as a clock ("5:01",
@@ -319,15 +323,50 @@ areas blanked. The editor is built to match it.
   trim handles, the trimmed-off parts dimmed and a playhead; and the preview
   controls: play/stop, a direction switch (forward, reverse, ping-pong), loop
   mode (auto, on, off), "Reset edits", and chips for Tempo, Key (with the
-  project key), Match loudness and Start (quantise). The "Similar" list (3c2b)
+  project key), Match loudness and Start (quantise). The "Similar" list (3c2b1)
   takes the panel's right side, the 10 nearest neighbours.
 - **Footer:** what a drag-out carries ("the original file", or e.g. "reversed,
   trimmed, stretched to 180 BPM"), the scan's progress and outcome, the kept
   renders' size and "Clear renders".
 - **File operations (plan 4):** context menu and batch dialogs, always with a
   preview; Ctrl/Cmd+Z undoes.
-- **Problems panel (3c2b):** files that failed to decode or analyse, with the
+- **Problems panel (3c2b2):** files that failed to decode or analyse, with the
   reason and a retry action.
+
+### Browsing (3c2b1)
+
+- **The sidebar sets the scope, the chips narrow it.** All samples, Favourites,
+  a folder or a collection sets where the search looks; picking one clears the
+  others (the search model holds one scope). The text and the chips narrow
+  within it. Counts come from the library and refresh when it changes.
+- **A saved search** loads its whole search, text and chips included, and stays
+  highlighted until something changes.
+- **Filter chips** open a popover anchored under the chip; changes apply as they
+  are made, and the whole search is saved with the project:
+
+  | Chip       | Popover                                                         | Active chip says |
+  | ---------- | --------------------------------------------------------------- | ---------------- |
+  | Type       | any / loops / one-shots switch                                  | `Loops`          |
+  | BPM        | from and to; "near 120" and "near the tempo"                    | `118–132 BPM`    |
+  | Key        | the 24 keys, any of                                             | `Am, C`          |
+  | Instrument | the library's tags, most used first, all of                     | `bass, synth`    |
+  | Length     | presets (under 1 s, 1–10 s, 10–60 s, over a minute) and from/to | `1–10 s`         |
+  | Rating     | a minimum in stars; unrated never match                         | `★★★ and up`     |
+
+  An active chip is amber with a × that clears it; "Clear all" clears every
+  chip. Samples with no loop verdict show only under Any.
+
+- **The table** shows every match: its rows are as many as the search matches,
+  fetched in pages of 500 as the view scrolls, so the scrollbar is true and the
+  top bar's count is not a cap. Clicking a header sorts by name, BPM, length,
+  key or rating (type, tags and the favourite star do not sort); the sort is
+  saved with the project. The favourite, rating and tags columns show what the
+  library holds; changing them is 3c2b2.
+- **Similar** lists the 10 samples nearest the selection by sound, with the
+  distance. Clicking one auditions it and makes it the selection: the table
+  selects its row when the search shows it, and otherwise clears its selection
+  while the preview shows the similar sample. A sample not analysed yet says
+  "Not analysed yet"; a failed query says "No similar samples".
 
 ### Look
 
@@ -414,6 +453,12 @@ without playing, with its tempo and key from the library.
 - **File operation failure mid-group:** execution stops, the group is left
   partially `done`, and the user is offered undo of the completed part.
 - **Trash unavailable:** delete refused, no fallback.
+- **Streaming failure:** anything reading ahead in a streamed file throws ends
+  streaming for that file only: it plays silence where it could not read, and
+  the loader carries on.
+- **A project's sample has gone:** the processor drops the selection rather than
+  keep playing the previous sample; the saved path stays in the project in case
+  the drive comes back.
 - **Loader failure:** anything a preview load throws, not only a probe error,
   marks that preview failed ("can't read this file" in the Tempo chip); the
   loader thread carries on with the next selection.
@@ -462,8 +507,10 @@ core, the audio engine, the CLI and the scanner build without JUCE.
   macOS) and clap-validator (CLAP) in CI on all three platforms.
   clap-validator's `param-conversions` test is skipped: it divides by the
   parameter count, and asma has no parameters.
-- **Performance:** scan and query timings over a synthetic 50k-file library,
-  reported in CI (informational, not gating).
+- **Performance:** scan, query and Similar timings over a synthetic 50k-file
+  library, reported in CI (informational, not gating). Similar runs on the
+  message thread while it stays under 50 ms there; past that it moves to a
+  worker.
 - **CI:** GitHub Actions on macOS, Windows and Linux for every push and PR.
   Release builds are dispatch-only.
 
