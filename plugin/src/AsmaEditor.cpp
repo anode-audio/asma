@@ -171,28 +171,28 @@ void AsmaEditor::loadState()
     browser_.setSearch(state.search);
     chips_.setModel(state.search);
     refreshSidebar();
-    {
-        // The header shows the saved sort; that is not the user sorting.
-        const juce::ScopedValueSetter quiet(quietSort_, true);
-        for (int column = kFavourite; column <= kTags; ++column)
-            if (sortFor(column) == state.search.sort) table_.getHeader().setSortColumnId(column, !state.search.descending);
-    }
+    showSort(state.search);
     table_.updateContent();
     showSelection();
 }
 
+void AsmaEditor::showSort(const SearchModel& model)
+{
+    for (int column = kFavourite; column <= kTags; ++column)
+        if (sortFor(column) == model.sort) table_.getHeader().setSortColumnId(column, !model.descending);
+}
+
 void AsmaEditor::sortOrderChanged(int newSortColumnId, bool isForwards)
 {
+    // The header tells us later (it reports through the message loop), also
+    // when it only shows the search's own sort: that is no change.
     const auto field = sortFor(newSortColumnId);
-    if (quietSort_ || !field) return;
-    SearchModel model = browser_.searchModel();
+    const SearchModel& current = browser_.searchModel();
+    if (!field || (*field == current.sort && current.descending == !isForwards)) return;
+    SearchModel model = current;
     model.sort = *field;
     model.descending = !isForwards;
-    browser_.setSearch(model);
-    processor_.updateState([&](PluginState& s) { s.search = model; });
-    table_.updateContent();
-    showSelection(); // the selection keeps its sample, on its new row
-    updateReadouts();
+    applySearch(model); // the selection keeps its sample, on its new row
 }
 
 void AsmaEditor::paint(juce::Graphics& g)
@@ -309,6 +309,7 @@ void AsmaEditor::poll()
         }
     if (browser_.poll()) {
         table_.updateContent();
+        similarFor_ = 0; // the library changed: analysis may have reached the selection
         showSelection();
         refreshSidebar();
     }
@@ -328,6 +329,7 @@ void AsmaEditor::applySearch(const SearchModel& model)
     processor_.updateState([&](PluginState& s) { s.search = model; });
     if (top_.searchBox().getText().toStdString() != model.text) top_.searchBox().setText(model.text, false);
     chips_.setModel(model);
+    showSort(model); // a saved search brings its sort
     table_.updateContent();
     showSelection();
     updateReadouts();

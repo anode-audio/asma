@@ -597,3 +597,52 @@ TEST_CASE("the Similar list says when nothing is selected or analysed", "[editor
     rig.editor->poll();
     CHECK(rig.editor->similar().message() == "Not analysed yet");
 }
+
+TEST_CASE("a saved search's sort shows in the header", "[editor]")
+{
+    EditorRig rig;
+    {
+        Db writer = Db::open(rig.f.dbPath);
+        SearchModel byBpm;
+        byBpm.sort = SortField::Bpm;
+        byBpm.descending = true;
+        UserData(writer).saveSearch("By tempo", byBpm);
+    }
+    rig.editor->poll();
+    rig.editor->sidebar().row(3).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    auto& header = rig.editor->table().getHeader();
+    CHECK(header.getColumnName(header.getSortColumnId()) == "BPM");
+    CHECK_FALSE(header.isSortedForwards());
+    CHECK(rig.p->pluginState().search.sort == SortField::Bpm); // and the header did not undo it
+}
+
+TEST_CASE("the Similar list catches up when analysis reaches the selection", "[editor]")
+{
+    EditorRig rig; // scanned, not analysed
+    rig.type("kick");
+    rig.editor->table().selectRow(0);
+    rig.editor->poll();
+    REQUIRE(rig.editor->similar().message() == "Not analysed yet");
+    {
+        Db db = Db::open(rig.f.dbPath);
+        analysePending(db); // the scan's analysis, a moment later
+    }
+    rig.editor->poll();
+    CHECK(rig.editor->similar().rowCount() == 2);
+}
+
+TEST_CASE("closing the window takes an open popover with it", "[editor]")
+{
+    juce::Component::SafePointer<juce::CallOutBox> box;
+    {
+        EditorRig rig;
+        rig.editor->chipRow().chip(app::Facet::Key).mainButton().triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+        for (auto* child : rig.editor->getChildren())
+            if (auto* found = dynamic_cast<juce::CallOutBox*>(child)) box = found;
+        REQUIRE(box != nullptr);
+    } // the host closes the editor
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+    CHECK(box == nullptr); // not left behind, holding a callback into a gone editor
+}

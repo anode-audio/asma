@@ -84,6 +84,7 @@ private:
     // and the sidebar's lit entry all follow.
     void applySearch(const SearchModel& model);
     void refreshSidebar(); // after the library changed
+    void showSort(const SearchModel& model); // the header's arrow on the search's sort
     void syncChanged(const audio::SyncSettings& sync);
     void chooseFolder();
     void showSelection();   // selects the saved file's row without playing it
@@ -111,7 +112,6 @@ private:
     std::unique_ptr<juce::FileChooser> chooser_;
     juce::String scanMessage_; // the last scan's outcome, until the next selection
     bool quietSelection_ = false;    // selection changes that must not play
-    bool quietSort_ = false;         // a header showing the saved sort is not a new sort
     std::uint64_t loadedStates_ = 0; // the processor's stateLoads() the controls show
     int ticks_ = 0;
     // What the readouts know about the selection.
