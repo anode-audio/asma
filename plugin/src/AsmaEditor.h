@@ -3,9 +3,11 @@
 
 #include "Browser.h"
 #include "LibraryView.h"
+#include "Sidebar.h"
 #include "ui/AsmaLookAndFeel.h"
 #include "ui/Footer.h"
 #include "ui/PreviewPanel.h"
+#include "ui/SidebarView.h"
 #include "ui/TopBar.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -46,6 +48,7 @@ public:
     PreviewPanel& preview() { return preview_; }
     Footer& footer() { return footer_; }
     TopBar& topBar() { return top_; }
+    SidebarView& sidebar() { return sidebar_; }
     // The standalone's tempo source and folders; hidden in a plugin.
     juce::Button& linkToggle() { return top_.linkChip(); }
     TempoBox& bpmBox() { return top_.tempoBox(); }
@@ -70,6 +73,10 @@ private:
     juce::var getDragSourceDescription(const juce::SparseSet<int>& rows) override;
     void timerCallback() override;
     void searchChanged();
+    // The one way the search changes: the table, the project, the search box
+    // and the sidebar's lit entry all follow.
+    void applySearch(const SearchModel& model);
+    void refreshSidebar(); // after the library changed
     void syncChanged(const audio::SyncSettings& sync);
     void chooseFolder();
     void showSelection();   // selects the saved file's row without playing it
@@ -83,6 +90,8 @@ private:
     LibraryView library_;
     Browser browser_{library_};
     TopBar top_;
+    SidebarView sidebar_;
+    std::vector<SidebarEntry> entries_; // what the sidebar lists
     juce::TableListBox table_{"Samples", this};
     juce::Label empty_;
     juce::TextButton emptyAddFolder_{juce::String::fromUTF8("Add folder…")};

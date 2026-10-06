@@ -46,6 +46,11 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
 
     top_.searchBox().onTextChange = [this] { searchChanged(); };
     addAndMakeVisible(top_);
+    sidebar_.onPick = [this](int index) {
+        if (index >= 0 && index < static_cast<int>(entries_.size()))
+            applySearch(withEntry(entries_[static_cast<std::size_t>(index)], browser_.searchModel()));
+    };
+    addAndMakeVisible(sidebar_);
     if (processor_.isStandalone()) {
         top_.tempoBox().onValueChange = [this] {
             const double bpm = top_.tempoBox().getValue();
@@ -154,6 +159,7 @@ void AsmaEditor::loadState()
         top_.linkChip().setToggleState(state.link, juce::dontSendNotification);
     }
     browser_.setSearch(state.search);
+    refreshSidebar();
     {
         // The header shows the saved sort; that is not the user sorting.
         const juce::ScopedValueSetter quiet(quietSort_, true);
@@ -191,12 +197,7 @@ void AsmaEditor::paint(juce::Graphics& g)
     g.setColour(theme::border);
     g.fillRect(bottom.getX(), bottom.getY(), bottom.getWidth(), 1);
     g.fillRect(bottom.getRight() - theme::kSimilarWidth, bottom.getY(), 1, bottom.getHeight());
-    // The sidebar's place (plan 3c2b).
-    const auto sidebar = area.removeFromLeft(theme::kSidebarWidth);
-    g.setColour(theme::panel);
-    g.fillRect(sidebar);
-    g.setColour(theme::border);
-    g.fillRect(sidebar.getRight() - 1, sidebar.getY(), 1, sidebar.getHeight());
+    area.removeFromLeft(theme::kSidebarWidth);
     // The chip row's place (plan 3c2b).
     g.fillRect(area.getX(), area.getY() + theme::kChipRowHeight - 1, area.getWidth(), 1);
 }
@@ -210,7 +211,7 @@ void AsmaEditor::resized()
     bottom.removeFromTop(1);
     bottom.removeFromRight(theme::kSimilarWidth);
     preview_.setBounds(bottom);
-    area.removeFromLeft(theme::kSidebarWidth);
+    sidebar_.setBounds(area.removeFromLeft(theme::kSidebarWidth));
     area.removeFromTop(theme::kChipRowHeight);
     table_.setBounds(area);
     empty_.setBounds(area.withSizeKeepingCentre(std::min(area.getWidth(), 520), 60).translated(0, -20));
@@ -300,6 +301,7 @@ void AsmaEditor::poll()
     if (browser_.poll()) {
         table_.updateContent();
         showSelection();
+        refreshSidebar();
     }
     updateReadouts();
 }
@@ -308,11 +310,24 @@ void AsmaEditor::searchChanged()
 {
     SearchModel model = browser_.searchModel();
     model.text = top_.searchBox().getText().toStdString();
+    applySearch(model);
+}
+
+void AsmaEditor::applySearch(const SearchModel& model)
+{
     browser_.setSearch(model);
     processor_.updateState([&](PluginState& s) { s.search = model; });
+    if (top_.searchBox().getText().toStdString() != model.text) top_.searchBox().setText(model.text, false);
     table_.updateContent();
     showSelection();
     updateReadouts();
+}
+
+void AsmaEditor::refreshSidebar()
+{
+    entries_ = sidebarEntries(library_);
+    sidebar_.setEntries(entries_);
+    sidebar_.setProblems(library_.problemCount());
 }
 
 void AsmaEditor::syncChanged(const audio::SyncSettings& sync)
@@ -353,7 +368,8 @@ void AsmaEditor::updateReadouts()
     const audio::EngineStatus status = processor_.engine().status();
     const bool current = status.generation == processor_.engine().selected(); // the status is the selection's
 
-    // The top bar.
+    // The top bar and the sidebar's lit entry.
+    sidebar_.setSelected(entryFor(entries_, browser_.searchModel()));
     top_.setCount(browser_.count(), static_cast<int>(browser_.total()));
     if (!processor_.isStandalone()) top_.setHostBpm(processor_.hostBpm());
 
@@ -366,13 +382,16 @@ void AsmaEditor::updateReadouts()
     else if (library_.state() != LibraryState::Open)
         empty = juce::String(library_.message());
     else if (browser_.count() == 0)
-        empty = browser_.searchModel().text.empty() ? (standalone ? "The library is empty. Add a folder of samples."
-                                                                  : "The library is empty.")
-                                                    : "No samples match.";
+        // Empty because there is nothing at all, or because the search (its
+        // text, chips or scope) matches nothing.
+        empty = browser_.total() == 0 ? (standalone ? "The library is empty. Add a folder of samples." : "The library is empty.")
+                                      : "No samples match.";
     if (empty != empty_.getText()) empty_.setText(empty, juce::dontSendNotification);
     empty_.setVisible(empty.isNotEmpty());
-    emptyAddFolder_.setVisible(standalone && empty.isNotEmpty() && library_.state() != LibraryState::Outdated
-                               && library_.state() != LibraryState::Unreadable && browser_.searchModel().text.empty());
+    // "Add folder" where there is nothing yet, not where a search found nothing.
+    const bool nothing = library_.state() == LibraryState::Missing
+                      || (library_.state() == LibraryState::Open && browser_.total() == 0);
+    emptyAddFolder_.setVisible(standalone && nothing);
 
     // The preview.
     if (const SearchRow* row = browser_.row(selectedRow_)) {

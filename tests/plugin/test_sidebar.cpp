@@ -127,3 +127,19 @@ TEST_CASE("an unopened library lists the fixed entries without counts", "[sideba
     REQUIRE(entries.size() == 2);
     CHECK(entries[0].count == 0);
 }
+
+TEST_CASE("the library counts the files that failed to decode or analyse", "[sidebar]")
+{
+    Rig rig;
+    LibraryView library(rig.f.dbPath);
+    library.refresh();
+    CHECK(library.problemCount() == 0);
+    {
+        Db writer = Db::open(rig.f.dbPath);
+        Library lib(writer);
+        lib.setStatus(rig.kick, FileStatus::Failed, "not audio");
+        lib.setAnalysisError(rig.loop, "too short");
+    }
+    library.changed();
+    CHECK(library.problemCount() == 2);
+}

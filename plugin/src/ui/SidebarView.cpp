@@ -1,0 +1,203 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#include "ui/SidebarView.h"
+
+#include "ui/Theme.h"
+
+#include <cmath>
+
+namespace asma::app {
+
+namespace {
+
+constexpr int kRowHeight = 30;
+constexpr int kHeadingHeight = 22;
+constexpr int kSectionGap = 18;
+constexpr int kTop = 14;
+
+const char* headingFor(EntryKind kind)
+{
+    switch (kind) {
+    case EntryKind::Folder: return "FOLDERS";
+    case EntryKind::Collection: return "COLLECTIONS";
+    case EntryKind::SavedSearch: return "SAVED SEARCHES";
+    case EntryKind::All:
+    case EntryKind::Favourites: break;
+    }
+    return nullptr;
+}
+
+// One entry: its name, its count on the right, lit when picked.
+class Row final : public juce::Button {
+public:
+    Row(const juce::String& name, const juce::String& count) : juce::Button(name), count_(count)
+    {
+        setTitle(name);
+        if (count.isNotEmpty()) setDescription(count + " samples");
+        setClickingTogglesState(false);
+    }
+    const juce::String& count() const { return count_; }
+    void paintButton(juce::Graphics& g, bool highlighted, bool down) override
+    {
+        const bool lit = getToggleState();
+        if (lit || highlighted || down) {
+            g.setColour(lit ? theme::raised : theme::raised.withAlpha(0.5f));
+            g.fillRect(getLocalBounds());
+        }
+        if (lit) {
+            g.setColour(theme::amber);
+            g.fillRect(0, 0, 2, getHeight());
+        }
+        auto area = getLocalBounds().reduced(18, 0);
+        const auto countFont = theme::font(theme::Face::Mono, 11.0f);
+        const int countWidth = static_cast<int>(std::ceil(juce::GlyphArrangement::getStringWidth(countFont, count_)));
+        g.setFont(countFont);
+        g.setColour(theme::muted);
+        g.drawText(count_, area.removeFromRight(countWidth), juce::Justification::centredRight, false);
+        g.setFont(theme::font(theme::Face::Text, 13.0f));
+        g.setColour(theme::text);
+        g.drawText(getButtonText(), area.withTrimmedRight(8), juce::Justification::centredLeft, true);
+    }
+
+private:
+    juce::String count_;
+};
+
+// At the foot: Problems with an amber count.
+class ProblemsButton final : public juce::Button {
+public:
+    ProblemsButton() : juce::Button("Problems") { setTitle("Problems"); }
+    juce::String count;
+    void paintButton(juce::Graphics& g, bool highlighted, bool down) override
+    {
+        const auto r = getLocalBounds().toFloat().reduced(0.5f);
+        if (highlighted || down) {
+            g.setColour(theme::raised);
+            g.fillRoundedRectangle(r, theme::kRadius);
+        }
+        g.setColour(theme::border);
+        g.drawRoundedRectangle(r, theme::kRadius, 1.0f);
+        auto area = getLocalBounds().reduced(10, 0);
+        g.setFont(theme::font(theme::Face::Text, 13.0f));
+        g.setColour(theme::text);
+        g.drawText("Problems", area, juce::Justification::centredLeft, false);
+        const auto font = theme::font(theme::Face::Mono, 11.0f);
+        const float w = juce::GlyphArrangement::getStringWidth(font, count) + 14.0f;
+        const auto badge = area.toFloat().removeFromRight(w).withSizeKeepingCentre(w, 16.0f);
+        g.setColour(theme::amber);
+        g.fillRoundedRectangle(badge, 8.0f);
+        g.setFont(font);
+        g.setColour(theme::ground);
+        g.drawText(count, badge, juce::Justification::centred, false);
+    }
+};
+
+} // namespace
+
+// What scrolls: the rows and the headings between them.
+class SidebarView::Content final : public juce::Component {
+public:
+    struct Heading {
+        juce::String title;
+        int y;
+    };
+    std::vector<Heading> headings;
+    void paint(juce::Graphics& g) override
+    {
+        g.setFont(theme::font(theme::Face::Heading, 11.0f).withExtraKerningFactor(0.08f));
+        g.setColour(theme::muted);
+        for (const auto& h : headings) g.drawText(h.title, 18, h.y, getWidth() - 36, kHeadingHeight, juce::Justification::centredLeft, false);
+    }
+};
+
+SidebarView::SidebarView() : content_(std::make_unique<Content>()), problems_(std::make_unique<ProblemsButton>())
+{
+    viewport_.setViewedComponent(content_.get(), false);
+    viewport_.setScrollBarsShown(true, false);
+    addAndMakeVisible(viewport_);
+    problems_->onClick = [this] {
+        if (onProblems) onProblems();
+    };
+    addChildComponent(*problems_);
+}
+
+SidebarView::~SidebarView() = default;
+
+void SidebarView::setEntries(std::vector<SidebarEntry> entries)
+{
+    entries_ = std::move(entries);
+    rows_.clear();
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+        const auto& e = entries_[i];
+        auto* row = rows_.add(new Row(juce::String::fromUTF8(e.name.c_str()), e.count >= 0 ? juce::String(e.count) : juce::String()));
+        row->onClick = [this, i] {
+            if (onPick) onPick(static_cast<int>(i));
+        };
+        content_->addAndMakeVisible(row);
+    }
+    resized();
+}
+
+void SidebarView::setSelected(int index)
+{
+    for (int i = 0; i < rows_.size(); ++i) rows_[i]->setToggleState(i == index, juce::dontSendNotification);
+}
+
+void SidebarView::setProblems(std::int64_t count)
+{
+    auto* p = static_cast<ProblemsButton*>(problems_.get());
+    const juce::String text(count);
+    if (p->isVisible() == (count > 0) && p->count == text) return;
+    p->count = text;
+    p->setVisible(count > 0);
+    resized();
+    repaint();
+}
+
+juce::String SidebarView::countText(int index) const
+{
+    return index >= 0 && index < rows_.size() ? static_cast<const Row*>(rows_[index])->count() : juce::String();
+}
+
+juce::StringArray SidebarView::sectionTitles() const
+{
+    juce::StringArray out;
+    for (const auto& h : content_->headings) out.add(h.title);
+    return out;
+}
+
+juce::String SidebarView::problemsText() const { return static_cast<const ProblemsButton*>(problems_.get())->count; }
+
+void SidebarView::paint(juce::Graphics& g)
+{
+    g.fillAll(theme::panel);
+    g.setColour(theme::border);
+    g.fillRect(getWidth() - 1, 0, 1, getHeight());
+}
+
+void SidebarView::resized()
+{
+    auto area = getLocalBounds().withTrimmedRight(1);
+    if (problems_->isVisible()) {
+        problems_->setBounds(area.removeFromBottom(14 + 34).reduced(12, 0).withTrimmedBottom(14));
+        area.removeFromBottom(8);
+    }
+    viewport_.setBounds(area);
+    content_->headings.clear();
+    int y = kTop;
+    EntryKind section = EntryKind::All;
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+        const auto kind = entries_[i].kind;
+        if (const char* heading = headingFor(kind); heading && kind != section) {
+            y += kSectionGap;
+            content_->headings.push_back({heading, y});
+            y += kHeadingHeight;
+        }
+        if (kind == EntryKind::Folder || kind == EntryKind::Collection || kind == EntryKind::SavedSearch) section = kind;
+        rows_[static_cast<int>(i)]->setBounds(0, y, area.getWidth(), kRowHeight);
+        y += kRowHeight;
+    }
+    content_->setSize(area.getWidth(), y + kTop);
+    content_->repaint();
+}
+
+} // namespace asma::app

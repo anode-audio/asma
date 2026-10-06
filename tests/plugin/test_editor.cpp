@@ -2,6 +2,7 @@
 #include "AsmaEditor.h"
 #include "LibraryFixture.h"
 #include "PluginTestUtil.h"
+#include "asma/core/UserData.h"
 #include "asma/audio/Render.h"
 #include "asma/core/Fs.h"
 
@@ -423,4 +424,71 @@ TEST_CASE("re-sorting keeps the selection on its sample, on its new row", "[edit
     juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
     CHECK(rig.editor->table().getSelectedRow() == 0);
     CHECK(fromUtf8(rig.p->pluginState().selected) == selected); // the same sample, not row 2's
+}
+
+TEST_CASE("picking in the sidebar sets the table's scope, and a saved search its whole search", "[editor]")
+{
+    EditorRig rig;
+    {
+        Db writer = Db::open(rig.f.dbPath);
+        Library lib(writer);
+        UserData data(writer);
+        data.setFavourite(lib.fileByAbsolutePath(rig.f.kick)->id, true);
+        SearchModel snares;
+        snares.text = "snare";
+        data.saveSearch("Snares", snares);
+    }
+    rig.editor->poll();
+    auto& sidebar = rig.editor->sidebar();
+    REQUIRE(sidebar.rowCount() == 4); // All, Favourites, the folder, the saved search
+    sidebar.row(1).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.editor->table().getNumRows() == 1);
+    CHECK(rig.p->pluginState().search.favouritesOnly); // saved with the project
+    CHECK(sidebar.row(1).getToggleState());
+
+    sidebar.row(3).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.editor->searchBox().getText() == "snare");
+    CHECK(rig.editor->table().getNumRows() == 1);
+    CHECK_FALSE(rig.p->pluginState().search.favouritesOnly);
+    CHECK(sidebar.row(3).getToggleState()); // lit while unchanged
+    rig.type("snare 02");
+    CHECK_FALSE(sidebar.row(3).getToggleState());
+    CHECK(sidebar.row(0).getToggleState()); // back to the scope, All
+}
+
+TEST_CASE("the sidebar shows how many files have problems", "[editor]")
+{
+    EditorRig rig;
+    CHECK_FALSE(rig.editor->sidebar().problemsButton().isVisible());
+    {
+        Db writer = Db::open(rig.f.dbPath);
+        Library lib(writer);
+        lib.setStatus(lib.fileByAbsolutePath(rig.f.snare)->id, FileStatus::Failed, "not audio");
+    }
+    rig.editor->poll();
+    CHECK(rig.editor->sidebar().problemsButton().isVisible());
+    CHECK(rig.editor->sidebar().problemsText() == "1");
+}
+
+TEST_CASE("a saved search naming a collection since deleted shows nothing, quietly", "[editor]")
+{
+    EditorRig rig;
+    {
+        Db writer = Db::open(rig.f.dbPath);
+        UserData data(writer);
+        const auto gone = data.createCollection("Gone");
+        SearchModel inGone;
+        inGone.collectionId = gone;
+        data.saveSearch("In gone", inGone);
+        data.deleteCollection(gone);
+    }
+    rig.editor->poll();
+    auto& sidebar = rig.editor->sidebar();
+    REQUIRE(sidebar.rowCount() == 4); // All, Favourites, the folder, the saved search
+    sidebar.row(3).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.editor->table().getNumRows() == 0);
+    CHECK(rig.editor->emptyText() == "No samples match.");
 }

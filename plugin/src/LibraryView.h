@@ -51,6 +51,9 @@ public:
     std::vector<Root> roots();
     std::vector<Collection> collections();
     std::vector<SavedSearch> savedSearches();
+    // Files in enabled folders that failed to decode or analyse: the
+    // Problems entry's count. 0 unless open.
+    std::int64_t problemCount();
     // Every sample a search could find: readable files in enabled folders. 0 unless open.
     std::int64_t sampleCount();
     // What the model matches, past the page search() returns. 0 unless open.

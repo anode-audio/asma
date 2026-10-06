@@ -117,6 +117,17 @@ std::vector<SavedSearch> LibraryView::savedSearches()
     return guarded([&] { return UserData(*db_).savedSearches(); }, std::vector<SavedSearch>{});
 }
 
+std::int64_t LibraryView::problemCount()
+{
+    return guarded(
+        [&] {
+            auto s = db_->prepare("SELECT COUNT(*) FROM files f JOIN roots r ON r.id = f.root_id WHERE r.enabled = 1 "
+                                  "AND (f.status = 'failed' OR (f.status = 'ok' AND f.analysis_error IS NOT NULL))");
+            return s.step() ? s.getInt(0) : std::int64_t{0};
+        },
+        std::int64_t{0});
+}
+
 std::int64_t LibraryView::sampleCount()
 {
     return guarded(
