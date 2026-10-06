@@ -102,6 +102,21 @@ std::optional<std::int64_t> LibraryView::fileId(const std::filesystem::path& fil
         std::optional<std::int64_t>{});
 }
 
+std::vector<Root> LibraryView::roots()
+{
+    return guarded([&] { return Library(*db_).roots(); }, std::vector<Root>{});
+}
+
+std::vector<Collection> LibraryView::collections()
+{
+    return guarded([&] { return UserData(*db_).collections(); }, std::vector<Collection>{});
+}
+
+std::vector<SavedSearch> LibraryView::savedSearches()
+{
+    return guarded([&] { return UserData(*db_).savedSearches(); }, std::vector<SavedSearch>{});
+}
+
 std::int64_t LibraryView::sampleCount()
 {
     return guarded(

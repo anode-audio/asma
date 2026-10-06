@@ -4,7 +4,9 @@
 #include "asma/audio/SampleInfo.h"
 #include "asma/core/ChangeWatcher.h"
 #include "asma/core/Db.h"
+#include "asma/core/Library.h"
 #include "asma/core/Query.h"
+#include "asma/core/UserData.h"
 
 #include <filesystem>
 #include <memory>
@@ -45,6 +47,10 @@ public:
 
     // Empty unless open.
     std::vector<SearchRow> search(const SearchModel& model);
+    // The library's folders, collections and saved searches; empty unless open.
+    std::vector<Root> roots();
+    std::vector<Collection> collections();
+    std::vector<SavedSearch> savedSearches();
     // Every sample a search could find: readable files in enabled folders. 0 unless open.
     std::int64_t sampleCount();
     // What the model matches, past the page search() returns. 0 unless open.
