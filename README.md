@@ -85,6 +85,14 @@ Selecting another sample drops the edits, so moving through the table always
 plays each sample as it is. The footer says what a drag-out will carry and
 offers to clear the kept renders. Space plays and stops.
 
+The sidebar picks where to look: all samples, favourites, a folder, a
+collection, or a saved search, which brings its whole search with it. The chips
+over the table narrow it further by type, BPM, key, instrument, length and
+rating; each opens a small panel, and its x clears it. The table holds every
+match, however many, sorts by clicking a column, and the Similar list beside the
+preview offers the samples that sound most like the selection. Rating, tagging
+and collecting come in a later release.
+
 The look is checked against the approved design by `[fidelity]` in
 `asma_plugin_tests`, on macOS only; `tests/ui/reference/README.md` says how the
 reference picture is made.

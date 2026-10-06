@@ -306,7 +306,7 @@ filter chips' popovers (approved for 3c2b1).
 
 - **Left sidebar (3c2b1):** All samples, Favourites, folders (roots),
   collections and saved searches, with counts; a Problems entry with a count at
-  the foot (its panel: 3c2b2).
+  the foot while any file has failed to decode or analyse (its panel: 3c2b2).
 - **Top bar:** the asma mark, the search field with a result count, and on the
   right the tempo source: in the standalone the Link switch, the BPM box and
   "Add folder…"; in a plugin the host's tempo, read-only ("host 124.0 BPM").
