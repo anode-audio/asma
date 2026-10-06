@@ -194,3 +194,14 @@ TEST_CASE("a library with many tags scrolls in the Instrument popover", "[popove
     CHECK(p.getHeight() == eight.getHeight()); // no taller than eight rows
     CHECK(p.tagCount() == 40);                 // every tag is there to scroll to
 }
+
+TEST_CASE("a field holding only a point is no limit, never 0", "[popovers]")
+{
+    const juce::ScopedJuceInitialiser_GUI gui;
+    Sink sink;
+    BpmPopover p({}, 0.0, sink.fn());
+    type(p.to(), "."); // on the way to typing ".5"
+    CHECK_FALSE(sink.last.bpmMax);
+    type(p.to(), ".5");
+    CHECK(sink.last.bpmMax == 0.5);
+}

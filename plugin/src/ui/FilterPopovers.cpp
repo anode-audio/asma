@@ -20,7 +20,9 @@ constexpr int kField = 28;
 std::optional<double> number(const juce::String& text)
 {
     const auto t = text.trim();
-    if (t.isEmpty() || !t.containsOnly("0123456789.") || t.indexOfChar('.') != t.lastIndexOfChar('.')) return std::nullopt;
+    if (t.isEmpty() || !t.containsOnly("0123456789.") || !t.containsAnyOf("0123456789")
+        || t.indexOfChar('.') != t.lastIndexOfChar('.'))
+        return std::nullopt;
     return t.getDoubleValue();
 }
 
