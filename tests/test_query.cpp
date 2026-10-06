@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "TestUtil.h"
+#include "asma/core/Analysis.h"
 #include "asma/core/Library.h"
 #include "asma/core/Query.h"
+#include "asma/core/Similar.h"
 #include "asma/core/UserData.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -315,4 +317,46 @@ TEST_CASE("rowsForIds keeps the given order and drops unusable ids", "[query]")
     s.lib.setStatus(s.snare, FileStatus::Missing);
     CHECK(ids(rowsForIds(s.db, {s.padLoop, s.snare, 9999, s.kick})) == Ids{s.padLoop, s.kick});
     CHECK(rowsForIds(s.db, {}).empty());
+}
+
+// Hidden: run with ./build/tests/asma_tests "[.perf]" on a Release build.
+// Similar runs on the UI thread while it stays this quick.
+TEST_CASE("similar over 50k analysed files", "[.perf]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto root = lib.addRoot(dir.path());
+    std::int64_t first = 0;
+    {
+        Transaction tx(db);
+        auto vector = db.prepare("UPDATE features SET feature_vector = ? WHERE file_id = ?");
+        std::uint32_t seed = 1;
+        std::vector<float> v(kFeatureVectorSize);
+        for (int i = 0; i < 50000; ++i) {
+            FileRecord f;
+            f.rootId = root;
+            f.relPath = "Pack/" + std::to_string(i) + ".wav";
+            f.size = i;
+            f.mtime = i;
+            f.format = "wav";
+            f.duration = 1.0;
+            const auto id = lib.insertFile(f);
+            if (i == 0) first = id;
+            lib.setDerived(id, {});
+            for (auto& x : v) {
+                seed = seed * 1664525u + 1013904223u; // any spread will do
+                x = static_cast<float>(seed >> 8) / 16777216.0f;
+            }
+            vector.bindBlob(1, v.data(), v.size() * sizeof(float)).bind(2, id).run();
+            vector.reset();
+        }
+        tx.commit();
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const auto matches = findSimilar(db, first, 10);
+    const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    WARN("similar took " << ms << " ms over 50000 files");
+    CHECK(matches.size() == 10);
+    CHECK(ms < 50.0); // past this, Similar moves off the UI thread (spec section 12)
 }
