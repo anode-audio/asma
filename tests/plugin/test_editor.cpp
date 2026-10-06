@@ -509,3 +509,29 @@ TEST_CASE("the chip row shows the project's filters, and clearing one widens the
     CHECK(rig.p->pluginState().search.type == SampleType::Any); // the project keeps it
     CHECK(type.label() == "Type");
 }
+
+TEST_CASE("clicking a chip opens its popover in the window, and its changes reach the table", "[editor]")
+{
+    EditorRig rig;
+    rig.editor->chipRow().chip(app::Facet::Key).mainButton().triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+    app::KeyPopover* keys = nullptr;
+    for (auto* child : rig.editor->getChildren())
+        if (auto* box = dynamic_cast<juce::CallOutBox*>(child))
+            for (auto* inner : box->getChildren())
+                if (auto* found = dynamic_cast<app::KeyPopover*>(inner)) keys = found;
+    REQUIRE(keys); // inside the editor: a plugin's popover stays in its window
+    keys->key(21).triggerClick(); // Am: the bass loop's key
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.editor->table().getNumRows() == 1);
+    CHECK(rig.editor->chipRow().chip(app::Facet::Key).label() == "Am");
+    CHECK(rig.p->pluginState().search.keys == std::vector<std::string>{"Am"});
+}
+
+TEST_CASE("the Instrument popover lists the library's tags", "[editor]")
+{
+    EditorRig rig;
+    const auto tags = rig.editor->popoverContext().tags;
+    REQUIRE_FALSE(tags.empty());
+    CHECK(tags.front().count >= 1);
+}

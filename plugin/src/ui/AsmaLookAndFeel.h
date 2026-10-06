@@ -8,7 +8,8 @@ namespace asma::app {
 // The Anode theme for JUCE's own widgets. Buttons read properties:
 // "asma.segment" ("first", "middle" or "last") draws one as part of a
 // segmented switch; "asma.accent" fills it amber when on; "asma.quiet" leaves
-// it transparent and muted when off; "asma.size" sets its text size (13).
+// it transparent and muted when off; "asma.size" sets its text size (13);
+// "asma.mono" draws its text in the mono face.
 // A toggling button is quiet when off.
 class AsmaLookAndFeel : public juce::LookAndFeel_V4 {
 public:
@@ -31,6 +32,10 @@ public:
     int getDefaultScrollbarWidth() override { return 10; }
     void drawScrollbar(juce::Graphics& g, juce::ScrollBar& bar, int x, int y, int width, int height, bool vertical,
                        int thumbStart, int thumbSize, bool mouseOver, bool mouseDown) override;
+
+    void drawCallOutBoxBackground(juce::CallOutBox& box, juce::Graphics& g, const juce::Path& path,
+                                  juce::Image& cachedImage) override;
+    int getCallOutBoxBorderSize(const juce::CallOutBox&) override { return 12; }
 
     void fillTextEditorBackground(juce::Graphics& g, int width, int height, juce::TextEditor& editor) override;
     void drawTextEditorOutline(juce::Graphics& g, int width, int height, juce::TextEditor& editor) override;

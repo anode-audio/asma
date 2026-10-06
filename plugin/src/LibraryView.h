@@ -51,6 +51,8 @@ public:
     std::vector<Root> roots();
     std::vector<Collection> collections();
     std::vector<SavedSearch> savedSearches();
+    // The tags searches can find, most used first; empty unless open.
+    std::vector<TagCount> tagCounts();
     // Files in enabled folders that failed to decode or analyse: the
     // Problems entry's count. 0 unless open.
     std::int64_t problemCount();

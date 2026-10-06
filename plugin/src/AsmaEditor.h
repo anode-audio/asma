@@ -6,6 +6,7 @@
 #include "Sidebar.h"
 #include "ui/AsmaLookAndFeel.h"
 #include "ui/ChipRow.h"
+#include "ui/FilterPopovers.h"
 #include "ui/Footer.h"
 #include "ui/PreviewPanel.h"
 #include "ui/SidebarView.h"
@@ -51,6 +52,8 @@ public:
     TopBar& topBar() { return top_; }
     SidebarView& sidebar() { return sidebar_; }
     ChipRow& chipRow() { return chips_; }
+    // What a chip's popover needs: the library's tags and the tempo in force.
+    PopoverContext popoverContext();
     // The standalone's tempo source and folders; hidden in a plugin.
     juce::Button& linkToggle() { return top_.linkChip(); }
     TempoBox& bpmBox() { return top_.tempoBox(); }

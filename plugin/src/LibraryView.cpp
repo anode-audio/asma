@@ -117,6 +117,11 @@ std::vector<SavedSearch> LibraryView::savedSearches()
     return guarded([&] { return UserData(*db_).savedSearches(); }, std::vector<SavedSearch>{});
 }
 
+std::vector<TagCount> LibraryView::tagCounts()
+{
+    return guarded([&] { return asma::tagCounts(*db_); }, std::vector<TagCount>{});
+}
+
 std::int64_t LibraryView::problemCount()
 {
     return guarded(

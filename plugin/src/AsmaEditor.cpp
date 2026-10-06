@@ -52,6 +52,12 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     };
     addAndMakeVisible(sidebar_);
     chips_.onChange = [this](const SearchModel& model) { applySearch(model); };
+    chips_.onOpen = [this](Facet facet, juce::Component& anchor) {
+        auto popover = makeFilterPopover(facet, browser_.searchModel(), popoverContext(),
+                                         [this](const SearchModel& model) { applySearch(model); });
+        // Inside the editor, so a plugin's popover stays in its own window.
+        juce::CallOutBox::launchAsynchronously(std::move(popover), getLocalArea(&anchor, anchor.getLocalBounds()), this);
+    };
     addAndMakeVisible(chips_);
     if (processor_.isStandalone()) {
         top_.tempoBox().onValueChange = [this] {
@@ -324,6 +330,8 @@ void AsmaEditor::applySearch(const SearchModel& model)
     showSelection();
     updateReadouts();
 }
+
+PopoverContext AsmaEditor::popoverContext() { return {library_.tagCounts(), processor_.tempoInForce()}; }
 
 void AsmaEditor::refreshSidebar()
 {

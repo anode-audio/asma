@@ -88,7 +88,8 @@ void AsmaLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button
     const bool accent = on && props["asma.accent"];
     const bool quiet = !on && (props["asma.quiet"] || button.getClickingTogglesState());
     const float size = props.contains("asma.size") ? static_cast<float>(props["asma.size"]) : 13.0f;
-    g.setFont(theme::font(accent ? theme::Face::SemiBold : theme::Face::Text, size));
+    const bool mono = props["asma.mono"];
+    g.setFont(theme::font(mono ? theme::Face::Mono : (accent ? theme::Face::SemiBold : theme::Face::Text), size));
     g.setColour(accent ? theme::ground : (quiet ? theme::muted : theme::text));
     g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(6, 0), juce::Justification::centred, 1);
 }
@@ -123,6 +124,15 @@ void AsmaLookAndFeel::drawScrollbar(juce::Graphics& g, juce::ScrollBar&, int x, 
                                 : juce::Rectangle<int>(thumbStart, y, thumbSize, height);
     g.setColour(mouseOver || mouseDown ? theme::faint : theme::border);
     g.fillRoundedRectangle(thumb.toFloat().reduced(3.0f), 2.0f);
+}
+
+void AsmaLookAndFeel::drawCallOutBoxBackground(juce::CallOutBox&, juce::Graphics& g, const juce::Path& path, juce::Image&)
+{
+    // A popover: a raised panel with a hairline, no shadow.
+    g.setColour(theme::panel);
+    g.fillPath(path);
+    g.setColour(theme::border);
+    g.strokePath(path, juce::PathStrokeType(1.0f));
 }
 
 void AsmaLookAndFeel::fillTextEditorBackground(juce::Graphics& g, int width, int height, juce::TextEditor& editor)
