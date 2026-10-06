@@ -47,6 +47,12 @@ struct SearchRow {
     std::optional<bool> isLoop;
     std::optional<int> rating;
     bool favourite = false;
+    std::vector<std::string> tags; // sorted
+};
+
+struct TagCount {
+    std::string name;
+    std::int64_t count = 0;
 };
 
 using SqlParam = std::variant<std::int64_t, double, std::string>;
@@ -64,6 +70,11 @@ SqlQuery buildSearchSql(const SearchModel& model);
 std::vector<SearchRow> search(Db& db, const SearchModel& model);
 // Every file the model matches, whatever its limit and offset.
 std::int64_t countSearch(Db& db, const SearchModel& model);
+// Where the file falls in the model's order, from 0, whatever its limit and
+// offset; nothing when the model does not match it.
+std::optional<std::int64_t> searchPosition(Db& db, const SearchModel& model, std::int64_t fileId);
+// The tags of files a search can show, most used first, then by name.
+std::vector<TagCount> tagCounts(Db& db);
 
 // The model as one JSON object, for saved searches and plugin state. Paging
 // (limit, offset) is view state and is left out; so are default values.

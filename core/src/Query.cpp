@@ -27,13 +27,22 @@ std::string lower(std::string_view s)
     return out;
 }
 
-constexpr std::string_view kRowSelect =
-    "SELECT f.id, r.path, f.rel_path, f.name, f.format, f.duration, ft.bpm, ft.key, ft.is_loop, rt.rating, "
-    "EXISTS (SELECT 1 FROM favourites fv WHERE fv.file_id = f.id) "
-    "FROM files f JOIN roots r ON r.id = f.root_id "
+// The files a search can show, with what its filters and orders use.
+constexpr std::string_view kRowFrom =
+    " FROM files f JOIN roots r ON r.id = f.root_id "
     "LEFT JOIN features ft ON ft.file_id = f.id "
     "LEFT JOIN ratings rt ON rt.file_id = f.id "
     "WHERE f.status = 'ok' AND r.enabled = 1";
+
+// A row's columns, as readRow reads them. Tags come as one string, sorted and
+// joined with the unit separator, which no tag contains.
+constexpr std::string_view kRowColumns =
+    "SELECT f.id, r.path, f.rel_path, f.name, f.format, f.duration, ft.bpm, ft.key, ft.is_loop, rt.rating, "
+    "EXISTS (SELECT 1 FROM favourites fv WHERE fv.file_id = f.id), "
+    "(SELECT group_concat(name, char(31)) FROM (SELECT t.name AS name FROM file_tags x JOIN tags t ON t.id = x.tag_id "
+    "WHERE x.file_id = f.id ORDER BY t.name))";
+
+std::string rowSelect() { return std::string(kRowColumns) + std::string(kRowFrom); }
 
 SearchRow readRow(const Statement& s)
 {
@@ -49,6 +58,13 @@ SearchRow readRow(const Statement& s)
     if (!s.isNull(8)) r.isLoop = s.getInt(8) != 0;
     if (!s.isNull(9)) r.rating = static_cast<int>(s.getInt(9));
     r.favourite = s.getInt(10) != 0;
+    if (!s.isNull(11)) {
+        const std::string joined = s.getText(11);
+        std::size_t start = 0;
+        for (std::size_t sep; (sep = joined.find('\x1f', start)) != std::string::npos; start = sep + 1)
+            r.tags.push_back(joined.substr(start, sep - start));
+        r.tags.push_back(joined.substr(start));
+    }
     return r;
 }
 
@@ -79,10 +95,12 @@ std::string ftsMatchExpression(std::string_view text)
     return out;
 }
 
-SqlQuery buildSearchSql(const SearchModel& m)
+namespace {
+
+// The search's conditions, appended to kRowFrom's WHERE.
+SqlQuery buildSearchFilter(const SearchModel& m)
 {
     SqlQuery q;
-    q.sql = std::string(kRowSelect);
 
     if (const std::string match = ftsMatchExpression(m.text); !match.empty()) {
         q.sql += " AND f.id IN (SELECT rowid FROM fts_files WHERE fts_files MATCH ?)";
@@ -131,7 +149,11 @@ SqlQuery buildSearchSql(const SearchModel& m)
         q.sql += " AND f.id IN (SELECT file_id FROM collection_items WHERE collection_id = ?)";
         q.params.emplace_back(*m.collectionId);
     }
+    return q;
+}
 
+std::string searchOrder(const SearchModel& m)
+{
     const std::string direction = m.descending ? " DESC" : " ASC";
     std::string order;
     switch (m.sort) {
@@ -141,7 +163,15 @@ SqlQuery buildSearchSql(const SearchModel& m)
     case SortField::Key: order = "ft.key IS NULL, ft.key" + direction; break;
     case SortField::Rating: order = "rt.rating IS NULL, rt.rating" + direction; break;
     }
-    q.sql += " ORDER BY " + order + ", f.id LIMIT ? OFFSET ?";
+    return order + ", f.id";
+}
+
+} // namespace
+
+SqlQuery buildSearchSql(const SearchModel& m)
+{
+    SqlQuery q = buildSearchFilter(m);
+    q.sql = rowSelect() + q.sql + " ORDER BY " + searchOrder(m) + " LIMIT ? OFFSET ?";
     q.params.emplace_back(static_cast<std::int64_t>(m.limit));
     q.params.emplace_back(static_cast<std::int64_t>(m.offset));
     return q;
@@ -178,7 +208,7 @@ std::vector<SearchRow> rowsForIds(Db& db, const std::vector<std::int64_t>& ids)
 {
     std::vector<SearchRow> rows;
     if (ids.empty()) return rows;
-    Statement s = db.prepare(std::string(kRowSelect) + " AND f.id IN (" + placeholders(ids.size()) + ")");
+    Statement s = db.prepare(rowSelect() + " AND f.id IN (" + placeholders(ids.size()) + ")");
     for (std::size_t i = 0; i < ids.size(); ++i) s.bind(static_cast<int>(i) + 1, ids[i]);
     std::vector<SearchRow> found;
     while (s.step()) found.push_back(readRow(s));
@@ -282,14 +312,31 @@ std::optional<SearchModel> searchModelFromJson(std::string_view json)
 
 std::int64_t countSearch(Db& db, const SearchModel& model)
 {
-    // The search's own filter, without its order and page: buildSearchSql
-    // ends with " ORDER BY ... LIMIT ? OFFSET ?" and those two parameters.
-    SqlQuery q = buildSearchSql(model);
-    q.sql.erase(q.sql.rfind(" ORDER BY "));
-    q.params.resize(q.params.size() - 2);
-    Statement s = db.prepare("SELECT COUNT(*) FROM (" + q.sql + ")");
-    bindAll(s, q.params);
+    const SqlQuery f = buildSearchFilter(model);
+    Statement s = db.prepare("SELECT COUNT(*)" + std::string(kRowFrom) + f.sql);
+    bindAll(s, f.params);
     return s.step() ? s.getInt(0) : 0;
+}
+
+std::optional<std::int64_t> searchPosition(Db& db, const SearchModel& model, std::int64_t fileId)
+{
+    const SqlQuery f = buildSearchFilter(model);
+    Statement s = db.prepare("SELECT pos FROM (SELECT f.id AS id, ROW_NUMBER() OVER (ORDER BY " + searchOrder(model)
+                             + ") - 1 AS pos" + std::string(kRowFrom) + f.sql + ") WHERE id = ?");
+    bindAll(s, f.params);
+    s.bind(static_cast<int>(f.params.size()) + 1, fileId);
+    if (!s.step()) return std::nullopt;
+    return s.getInt(0);
+}
+
+std::vector<TagCount> tagCounts(Db& db)
+{
+    Statement s = db.prepare("SELECT t.name, COUNT(*) FROM file_tags x JOIN tags t ON t.id = x.tag_id "
+                             "JOIN files f ON f.id = x.file_id JOIN roots r ON r.id = f.root_id "
+                             "WHERE f.status = 'ok' AND r.enabled = 1 GROUP BY t.id ORDER BY COUNT(*) DESC, t.name");
+    std::vector<TagCount> out;
+    while (s.step()) out.push_back({s.getText(0), s.getInt(1)});
+    return out;
 }
 
 } // namespace asma

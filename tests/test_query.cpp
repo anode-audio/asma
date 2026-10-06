@@ -91,6 +91,43 @@ TEST_CASE("countSearch counts every match, past the page the search returns", "[
     CHECK(countSearch(s.db, page) == 2);
 }
 
+TEST_CASE("each row carries its tags, sorted", "[query]")
+{
+    Seeded s;
+    for (const auto& r : search(s.db, {}))
+        if (r.id == s.padLoop) CHECK(r.tags == std::vector<std::string>{"pad", "synth"});
+        else if (r.id == s.kick) CHECK(r.tags == std::vector<std::string>{"kick"});
+}
+
+TEST_CASE("tagCounts lists the tags searches can find, most used first", "[query]")
+{
+    Seeded s;
+    const auto tags = tagCounts(s.db);
+    REQUIRE(tags.size() == 5);
+    CHECK(tags[0].name == "kick"); // two files
+    CHECK(tags[0].count == 2);
+    CHECK(tags[1].name == "bass"); // then by name
+    CHECK(tags[1].count == 1);
+    s.lib.setStatus(s.kick, FileStatus::Missing);
+    CHECK(tagCounts(s.db)[0].count == 1); // only files a search shows
+}
+
+TEST_CASE("searchPosition finds a file's row in the sorted results", "[query]")
+{
+    Seeded s;
+    SearchModel m; // by name: Bass_Loop, Kick_01, Kick_Deep, Pad_Loop, snare
+    CHECK(searchPosition(s.db, m, s.bassLoop) == 0);
+    CHECK(searchPosition(s.db, m, s.padLoop) == 3);
+    m.sort = SortField::Duration;
+    m.descending = true; // Pad 10.6, Bass 7.5, Kick_Deep 0.8, Kick 0.4, snare 0.3
+    CHECK(searchPosition(s.db, m, s.kick) == 3);
+    m.text = "kick";
+    CHECK(searchPosition(s.db, m, s.padLoop) == std::nullopt); // not a match
+    m.limit = 1;
+    m.offset = 1;
+    CHECK(searchPosition(s.db, m, s.flacHit) == 0); // the page does not matter
+}
+
 TEST_CASE("text search prefix-matches names, folders and tags", "[query]")
 {
     Seeded s;
