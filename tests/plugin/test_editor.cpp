@@ -492,3 +492,20 @@ TEST_CASE("a saved search naming a collection since deleted shows nothing, quiet
     CHECK(rig.editor->table().getNumRows() == 0);
     CHECK(rig.editor->emptyText() == "No samples match.");
 }
+
+TEST_CASE("the chip row shows the project's filters, and clearing one widens the table", "[editor]")
+{
+    EditorRig rig;
+    app::PluginState s = rig.p->pluginState();
+    s.search.type = SampleType::Loop;
+    rig.p->setPluginState(s);
+    rig.editor->poll();
+    auto& type = rig.editor->chipRow().chip(app::Facet::Type);
+    CHECK(type.label() == "Loops");
+    CHECK(rig.editor->table().getNumRows() == 1); // the bass loop
+    type.clearButton().triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.editor->table().getNumRows() == 3);
+    CHECK(rig.p->pluginState().search.type == SampleType::Any); // the project keeps it
+    CHECK(type.label() == "Type");
+}

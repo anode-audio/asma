@@ -51,6 +51,8 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
             applySearch(withEntry(entries_[static_cast<std::size_t>(index)], browser_.searchModel()));
     };
     addAndMakeVisible(sidebar_);
+    chips_.onChange = [this](const SearchModel& model) { applySearch(model); };
+    addAndMakeVisible(chips_);
     if (processor_.isStandalone()) {
         top_.tempoBox().onValueChange = [this] {
             const double bpm = top_.tempoBox().getValue();
@@ -159,6 +161,7 @@ void AsmaEditor::loadState()
         top_.linkChip().setToggleState(state.link, juce::dontSendNotification);
     }
     browser_.setSearch(state.search);
+    chips_.setModel(state.search);
     refreshSidebar();
     {
         // The header shows the saved sort; that is not the user sorting.
@@ -197,9 +200,7 @@ void AsmaEditor::paint(juce::Graphics& g)
     g.setColour(theme::border);
     g.fillRect(bottom.getX(), bottom.getY(), bottom.getWidth(), 1);
     g.fillRect(bottom.getRight() - theme::kSimilarWidth, bottom.getY(), 1, bottom.getHeight());
-    area.removeFromLeft(theme::kSidebarWidth);
-    // The chip row's place (plan 3c2b).
-    g.fillRect(area.getX(), area.getY() + theme::kChipRowHeight - 1, area.getWidth(), 1);
+
 }
 
 void AsmaEditor::resized()
@@ -212,7 +213,7 @@ void AsmaEditor::resized()
     bottom.removeFromRight(theme::kSimilarWidth);
     preview_.setBounds(bottom);
     sidebar_.setBounds(area.removeFromLeft(theme::kSidebarWidth));
-    area.removeFromTop(theme::kChipRowHeight);
+    chips_.setBounds(area.removeFromTop(theme::kChipRowHeight));
     table_.setBounds(area);
     empty_.setBounds(area.withSizeKeepingCentre(std::min(area.getWidth(), 520), 60).translated(0, -20));
     emptyAddFolder_.setBounds(area.withSizeKeepingCentre(120, 30).translated(0, 30));
@@ -318,6 +319,7 @@ void AsmaEditor::applySearch(const SearchModel& model)
     browser_.setSearch(model);
     processor_.updateState([&](PluginState& s) { s.search = model; });
     if (top_.searchBox().getText().toStdString() != model.text) top_.searchBox().setText(model.text, false);
+    chips_.setModel(model);
     table_.updateContent();
     showSelection();
     updateReadouts();

@@ -5,6 +5,7 @@
 #include "LibraryView.h"
 #include "Sidebar.h"
 #include "ui/AsmaLookAndFeel.h"
+#include "ui/ChipRow.h"
 #include "ui/Footer.h"
 #include "ui/PreviewPanel.h"
 #include "ui/SidebarView.h"
@@ -49,6 +50,7 @@ public:
     Footer& footer() { return footer_; }
     TopBar& topBar() { return top_; }
     SidebarView& sidebar() { return sidebar_; }
+    ChipRow& chipRow() { return chips_; }
     // The standalone's tempo source and folders; hidden in a plugin.
     juce::Button& linkToggle() { return top_.linkChip(); }
     TempoBox& bpmBox() { return top_.tempoBox(); }
@@ -91,6 +93,7 @@ private:
     Browser browser_{library_};
     TopBar top_;
     SidebarView sidebar_;
+    ChipRow chips_;
     std::vector<SidebarEntry> entries_; // what the sidebar lists
     juce::TableListBox table_{"Samples", this};
     juce::Label empty_;
