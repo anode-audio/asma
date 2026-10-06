@@ -6,17 +6,25 @@ UI") rebuilt as `main.html`, with these changes and nothing else:
 
 - The rows, the search, the count, the file line and the tempo are the test's
   demo library and state, not the design's sample data.
-- The areas plan 3c2b fills are blank: the sidebar, the chip row and the Similar
-  list. The demo library has no favourites or ratings, so those columns show
-  faint stars.
+- The sidebar, the chip row, the ratings and favourites and the Similar list
+  show the demo library: two folders, a collection, two saved searches, the
+  design's ratings and favourites, its two active filters, and the neighbours
+  the demo's analysis finds.
 - The sample is stopped (a play button, no playhead), and the Key and Start
   chips say what they say when off ("off", "now"), so the picture is
   deterministic.
 - The footer's right side is empty: the test has no scan to report and no
   renders.
 
-The test leaves out the waveform's own shape (the demo audio is not the
-design's) and the window's resize corner.
+`key-popover.png` is the design's Key popover from the canvas's popovers
+artboard, rebuilt as `key-popover.html` at the size the app gives it (360×180),
+with C and Am picked.
+
+Both pictures are blurred before they are compared, so the test checks where
+text and shapes are rather than how each renderer draws their edges. Each area
+has its own limit, recorded in the test with the figures it measured. The test
+leaves out the waveform's own shape (the demo audio is not the design's) and the
+window's resize corner.
 
 ## Making it again
 
@@ -27,6 +35,9 @@ Chrome at exactly 1280×800, scale 1:
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
   --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
   --window-size=1280,800 --screenshot="$PWD/main.png" "file://$PWD/main.html"
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+  --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+  --window-size=360,180 --screenshot="$PWD/key-popover.png" "file://$PWD/key-popover.html"
 ```
 
 `main.html` loads the fonts from `plugin/fonts`, the same files the app embeds.

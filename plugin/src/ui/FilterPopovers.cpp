@@ -211,6 +211,7 @@ KeyPopover::KeyPopover(const SearchModel& model, SearchChanged onChange)
         b->getProperties().set("asma.accent", true);
         b->getProperties().set("asma.size", 12.0f);
         b->getProperties().set("asma.mono", true);
+        b->getProperties().set("asma.quiet", false); // unpicked keys read plainly, as the design has them
         b->setToggleState(std::find(model.keys.begin(), model.keys.end(), names[i].toStdString()) != model.keys.end(),
                           juce::dontSendNotification);
         b->onClick = [this, i, b] {

@@ -5,6 +5,17 @@
 
 namespace asma::app {
 
+namespace {
+
+// Quiet (transparent, muted) when off: as "asma.quiet" says, else when it toggles.
+bool quiet(const juce::Button& button)
+{
+    const auto& props = button.getProperties();
+    return props.contains("asma.quiet") ? static_cast<bool>(props["asma.quiet"]) : button.getClickingTogglesState();
+}
+
+} // namespace
+
 AsmaLookAndFeel::AsmaLookAndFeel()
 {
     using namespace theme;
@@ -54,7 +65,7 @@ void AsmaLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& butt
     const bool on = button.getToggleState();
     juce::Colour fill = theme::raised;
     if (on && props["asma.accent"]) fill = theme::amber;
-    else if (!on && (props["asma.quiet"] || button.getClickingTogglesState())) fill = juce::Colours::transparentBlack;
+    else if (!on && quiet(button)) fill = juce::Colours::transparentBlack;
     if (highlighted || down) fill = fill.isTransparent() ? theme::raised.withAlpha(0.6f) : fill.brighter(0.06f);
 
     auto r = button.getLocalBounds().toFloat();
@@ -86,11 +97,11 @@ void AsmaLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button
     const auto& props = button.getProperties();
     const bool on = button.getToggleState();
     const bool accent = on && props["asma.accent"];
-    const bool quiet = !on && (props["asma.quiet"] || button.getClickingTogglesState());
+    const bool quietText = !on && quiet(button);
     const float size = props.contains("asma.size") ? static_cast<float>(props["asma.size"]) : 13.0f;
     const bool mono = props["asma.mono"];
     g.setFont(theme::font(mono ? theme::Face::Mono : (accent ? theme::Face::SemiBold : theme::Face::Text), size));
-    g.setColour(accent ? theme::ground : (quiet ? theme::muted : theme::text));
+    g.setColour(accent ? theme::ground : (quietText ? theme::muted : theme::text));
     g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(6, 0), juce::Justification::centred, 1);
 }
 

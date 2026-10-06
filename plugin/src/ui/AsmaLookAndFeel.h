@@ -10,7 +10,7 @@ namespace asma::app {
 // segmented switch; "asma.accent" fills it amber when on; "asma.quiet" leaves
 // it transparent and muted when off; "asma.size" sets its text size (13);
 // "asma.mono" draws its text in the mono face.
-// A toggling button is quiet when off.
+// A toggling button is quiet when off, unless "asma.quiet" is set false.
 class AsmaLookAndFeel : public juce::LookAndFeel_V4 {
 public:
     static constexpr int kTableMargin = 14; // px before a table's first column's text

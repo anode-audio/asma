@@ -1,0 +1,56 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- The approved design's Key popover (the canvas's popovers artboard), at the
+     size the app gives it, C and Am picked. See README.md beside it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>asma key popover reference</title>
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../../plugin/fonts/Inter-Regular.ttf"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../../plugin/fonts/JetBrainsMono-Regular.ttf"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 600; src: url("../../../plugin/fonts/SpaceGrotesk-SemiBold.ttf"); }
+* { box-sizing: border-box; }
+body { margin: 0; background: #111316; }
+.pop { width: 360px; height: 180px; padding: 14px; background: #111316; color: #e8e9eb; }
+.title { height: 22px; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.title b { font-family: "Space Grotesk"; font-weight: 600; font-size: 13px; }
+.title span { font-family: Inter; font-size: 11px; color: #8a8f98; }
+.grid { display: grid; grid-template-columns: repeat(6, 52px); gap: 4px; }
+.k { height: 28px; border: 1px solid #2a2d33; border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  font-family: "JetBrains Mono"; font-size: 12px; color: #e8e9eb; }
+.k.on { background: #e8a33d; border-color: #2a2d33; color: #0b0c0e; }
+</style>
+</head>
+<body>
+<div class="pop">
+  <div class="title"><b>Key</b><span>any of</span></div>
+  <div class="grid">
+    <span class="k on">C</span>
+    <span class="k">C#</span>
+    <span class="k">D</span>
+    <span class="k">D#</span>
+    <span class="k">E</span>
+    <span class="k">F</span>
+    <span class="k">F#</span>
+    <span class="k">G</span>
+    <span class="k">G#</span>
+    <span class="k">A</span>
+    <span class="k">A#</span>
+    <span class="k">B</span>
+    <span class="k">Cm</span>
+    <span class="k">C#m</span>
+    <span class="k">Dm</span>
+    <span class="k">D#m</span>
+    <span class="k">Em</span>
+    <span class="k">Fm</span>
+    <span class="k">F#m</span>
+    <span class="k">Gm</span>
+    <span class="k">G#m</span>
+    <span class="k on">Am</span>
+    <span class="k">A#m</span>
+    <span class="k">Bm</span>
+  </div>
+</div>
+</body>
+</html>
