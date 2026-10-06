@@ -313,3 +313,16 @@ TEST_CASE("loudness is there once the file is analysed", "[library]")
     lib.resetAnalysis(id);
     CHECK_FALSE(lib.loudness(id));
 }
+
+TEST_CASE("an empty path is in no folder, and looking it up is not an error", "[library]")
+{
+    // libstdc++'s std::filesystem::absolute throws on an empty path where
+    // libc++ returns the working directory: a lookup must not depend on that.
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    lib.addRoot(dir.path());
+    std::optional<FileRecord> found;
+    CHECK_NOTHROW(found = lib.fileByAbsolutePath({}));
+    CHECK_FALSE(found);
+}

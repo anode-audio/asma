@@ -67,6 +67,7 @@ std::string Browser::contentHash(int index)
 
 int Browser::rowOf(const std::filesystem::path& file)
 {
+    if (file.empty()) return -1; // nothing selected
     const auto id = library_.fileId(file);
     if (!id) return -1;
     const auto position = library_.position(model_, *id);

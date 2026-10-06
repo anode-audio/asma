@@ -186,9 +186,14 @@ std::optional<FileRecord> Library::fileByPath(std::int64_t rootId, std::string_v
 
 std::optional<FileRecord> Library::fileByAbsolutePath(const fs::path& path)
 {
+    // An empty path is in no folder. Never ask std::filesystem::absolute for
+    // it: libstdc++ throws where libc++ returns the working directory.
+    if (path.empty()) return std::nullopt;
     std::error_code ec;
-    fs::path canonical = fs::weakly_canonical(fs::absolute(path), ec);
-    if (ec) canonical = fs::absolute(path);
+    const fs::path absolute = fs::absolute(path, ec);
+    if (ec) return std::nullopt;
+    fs::path canonical = fs::weakly_canonical(absolute, ec);
+    if (ec) canonical = absolute;
     const std::string full = toUtf8(canonical);
     for (const auto& r : roots()) {
         const std::string prefix = r.path.back() == '/' ? r.path : r.path + "/";

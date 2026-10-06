@@ -646,3 +646,12 @@ TEST_CASE("closing the window takes an open popover with it", "[editor]")
     juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     CHECK(box == nullptr); // not left behind, holding a callback into a gone editor
 }
+
+TEST_CASE("opening the window with nothing selected leaves the library open", "[editor]")
+{
+    EditorRig rig; // a fresh project: no selection to find
+    rig.editor->poll();
+    CHECK(rig.editor->sidebar().rowCount() == 3); // All, Favourites, the folder: the library still answers
+    rig.type("snare");
+    CHECK(rig.editor->table().getNumRows() == 1);
+}
