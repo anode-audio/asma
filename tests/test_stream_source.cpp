@@ -101,6 +101,19 @@ TEST_CASE("StreamSource stops streaming when the file goes away", "[stream]")
     CHECK(readAndCheck(s, 0, 64)); // the head is still there
 }
 
+TEST_CASE("StreamSource stops streaming whatever reading throws", "[stream]")
+{
+    auto reader = std::make_unique<FakeReader>(static_cast<std::uint64_t>(20 * B));
+    const auto throwing = reader->throwing;
+    StreamSource s(std::move(reader));
+    throwing->store(true);
+    s.hint(5 * B, 1);
+    CHECK_NOTHROW(s.fill()); // on the loader thread, a throw would take the host down
+    CHECK(s.failed());
+    CHECK_FALSE(readAndCheck(s, 5 * B, 64)); // silence where it could not read
+    CHECK(readAndCheck(s, 0, 64));
+}
+
 TEST_CASE("StreamSource never hands out a block while fill overwrites it", "[stream]")
 {
     auto s = stream(200);

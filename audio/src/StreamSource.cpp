@@ -162,9 +162,11 @@ int StreamSource::fill(int maxBlocks)
         if (slot == slots_.end()) break;
         slot->block.store(-1);
         while (slot->readers.load() != 0) std::this_thread::yield();
+        // Whatever reading throws ends streaming for this file only: fill()
+        // runs on the loader thread, where an escape would end the host.
         try {
             loadBlock(b, slot->data.data(), kBlockFrames);
-        } catch (const ProbeError&) {
+        } catch (...) {
             failed_.store(true);
             return loaded;
         }

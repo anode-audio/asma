@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <new>
 
 namespace asma::test {
 
@@ -29,10 +30,13 @@ public:
 
     // Seeks from now on fail, as when a drive goes away mid-stream.
     std::shared_ptr<std::atomic<bool>> broken = std::make_shared<std::atomic<bool>>(false);
+    // Reads from now on throw, as an allocation failure would.
+    std::shared_ptr<std::atomic<bool>> throwing = std::make_shared<std::atomic<bool>>(false);
 
 protected:
     std::uint64_t readInterleaved(float* out, std::uint64_t n) override
     {
+        if (throwing->load()) throw std::bad_alloc();
         std::uint64_t i = 0;
         for (; i < n && pos_ < frames_; ++i, ++pos_)
             for (int c = 0; c < sourceChannels_; ++c)

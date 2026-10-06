@@ -43,8 +43,8 @@ public:
     bool ready(std::int64_t frame) const override;
 
     // Loader thread: loads up to maxBlocks missing blocks around the playhead,
-    // nearest first. Returns how many it loaded. A read error ends streaming:
-    // failed() turns true and the missing blocks stay silent.
+    // nearest first. Returns how many it loaded. Anything reading throws ends
+    // streaming: failed() turns true and the missing blocks stay silent.
     int fill(int maxBlocks = 4);
     bool failed() const { return failed_.load(); }
     // Blocks read() found missing, for tests and diagnostics.
