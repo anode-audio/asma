@@ -44,12 +44,16 @@ header { height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 
 nav { width: 220px; flex-shrink: 0; border-right: 1px solid #2a2d33; background: #111316; }
 main { flex-grow: 1; display: flex; flex-direction: column; min-width: 0; }
 .chips { height: 44px; flex-shrink: 0; border-bottom: 1px solid #2a2d33; }
-.head, .row { height: 30px; display: grid; grid-template-columns: minmax(0, 1fr) 76px 70px 56px 72px; align-items: center; }
+.head, .row { height: 30px; display: grid; grid-template-columns: 48px minmax(0, 1fr) 76px 70px 56px 72px 88px 140px; align-items: center; }
 .head { border-bottom: 1px solid #2a2d33; font-family: "Space Grotesk"; font-size: 11px; font-weight: 600;
   letter-spacing: 0.06em; color: #8a8f98; }
 .row { border-bottom: 1px solid #1c1f23; }
 .row .mono { font-size: 12px; }
-.head span:first-child, .row .name { padding-left: 14px; }
+.head span:first-child, .row .fav { padding-left: 14px; }
+.fav { color: #3a3e45; }
+.stars { color: #3a3e45; font-size: 11px; letter-spacing: 1.5px; }
+.tags { color: #8a8f98; font-size: 12px; }
+.head .lit { color: #e8e9eb; }
 .row.sel { background: rgba(232,163,61,0.10); box-shadow: inset 2px 0 0 #e8a33d; }
 .preview { height: 236px; flex-shrink: 0; border-top: 1px solid #2a2d33; background: #111316; display: flex; }
 .pleft { flex-grow: 1; min-width: 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -105,20 +109,20 @@ footer { height: 26px; flex-shrink: 0; display: flex; align-items: center; justi
     <nav></nav>
     <main>
       <div class="chips"></div>
-      <div class="head"><span>NAME</span><span>TYPE</span><span>BPM</span><span>KEY</span><span>LENGTH</span></div>
-      <div class="row"><span class="name">Bass_Loop_132_rolling.wav</span><span class="muted">loop</span><span class="mono">132</span><span class="mono"></span><span class="mono muted">7.27 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_A#m_128_wobble.wav</span><span class="muted">loop</span><span class="mono">128</span><span class="mono">A#m</span><span class="mono muted">7.50 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_A#m_130.wav</span><span class="muted">loop</span><span class="mono">130</span><span class="mono">A#m</span><span class="mono muted">7.38 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_Am_118.wav</span><span class="muted">loop</span><span class="mono">118</span><span class="mono">Am</span><span class="mono muted">8.14 s</span></div>
-      <div class="row sel"><span class="name">Bass_Loop_Am_120.wav</span><span class="muted">loop</span><span class="mono">120</span><span class="mono">Am</span><span class="mono muted">8.00 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_Am_130_acid.wav</span><span class="muted">loop</span><span class="mono">130</span><span class="mono">Am</span><span class="mono muted">7.38 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_C_126_fingered.wav</span><span class="muted">loop</span><span class="mono">126</span><span class="mono"></span><span class="mono muted">7.62 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_Cm_126_wet.wav</span><span class="muted">loop</span><span class="mono">126</span><span class="mono">Cm</span><span class="mono muted">7.62 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_Dm_120_dusty.wav</span><span class="muted">loop</span><span class="mono">120</span><span class="mono">Dm</span><span class="mono muted">4.00 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_Em_124.wav</span><span class="muted">loop</span><span class="mono">124</span><span class="mono">Em</span><span class="mono muted">3.87 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_F_124_sub.wav</span><span class="muted">loop</span><span class="mono">124</span><span class="mono"></span><span class="mono muted">7.74 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_Fm_128.wav</span><span class="muted">loop</span><span class="mono">128</span><span class="mono">Fm</span><span class="mono muted">3.75 s</span></div>
-      <div class="row"><span class="name">Bass_Loop_Gm_122.wav</span><span class="muted">loop</span><span class="mono">122</span><span class="mono">Gm</span><span class="mono muted">7.87 s</span></div>
+      <div class="head"><span></span><span class="lit">NAME &#9652;</span><span>TYPE</span><span>BPM</span><span>KEY</span><span>LENGTH</span><span>RATING</span><span>TAGS</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_132_rolling.wav</span><span class="muted">loop</span><span class="mono">132</span><span class="mono"></span><span class="mono muted">7.27 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_A#m_128_wobble.wav</span><span class="muted">loop</span><span class="mono">128</span><span class="mono">A#m</span><span class="mono muted">7.50 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_A#m_130.wav</span><span class="muted">loop</span><span class="mono">130</span><span class="mono">A#m</span><span class="mono muted">7.38 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_Am_118.wav</span><span class="muted">loop</span><span class="mono">118</span><span class="mono">Am</span><span class="mono muted">8.14 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row sel"><span class="fav">&#9734;</span><span class="name">Bass_Loop_Am_120.wav</span><span class="muted">loop</span><span class="mono">120</span><span class="mono">Am</span><span class="mono muted">8.00 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_Am_130_acid.wav</span><span class="muted">loop</span><span class="mono">130</span><span class="mono">Am</span><span class="mono muted">7.38 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_C_126_fingered.wav</span><span class="muted">loop</span><span class="mono">126</span><span class="mono"></span><span class="mono muted">7.62 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_Cm_126_wet.wav</span><span class="muted">loop</span><span class="mono">126</span><span class="mono">Cm</span><span class="mono muted">7.62 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_Dm_120_dusty.wav</span><span class="muted">loop</span><span class="mono">120</span><span class="mono">Dm</span><span class="mono muted">4.00 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_Em_124.wav</span><span class="muted">loop</span><span class="mono">124</span><span class="mono">Em</span><span class="mono muted">3.87 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_F_124_sub.wav</span><span class="muted">loop</span><span class="mono">124</span><span class="mono"></span><span class="mono muted">7.74 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_Fm_128.wav</span><span class="muted">loop</span><span class="mono">128</span><span class="mono">Fm</span><span class="mono muted">3.75 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
+      <div class="row"><span class="fav">&#9734;</span><span class="name">Bass_Loop_Gm_122.wav</span><span class="muted">loop</span><span class="mono">122</span><span class="mono">Gm</span><span class="mono muted">7.87 s</span><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span><span class="tags">bass</span></div>
     </main>
   </div>
   <section class="preview">

@@ -17,6 +17,20 @@ namespace {
 constexpr int kTimerHz = 30;      // the playhead moves smoothly
 constexpr int kLibraryEvery = 6;  // ticks between library checks: 5 a second
 constexpr int kRendersEvery = 60; // ticks between measuring the renders: every 2 s
+constexpr int kStarColumn = 48;   // the favourite star, after the table's margin
+
+// The sort a column gives; nothing for those that do not sort.
+std::optional<SortField> sortFor(int column)
+{
+    switch (column) {
+    case 2: return SortField::Name;
+    case 4: return SortField::Bpm;
+    case 5: return SortField::Key;
+    case 6: return SortField::Duration;
+    case 7: return SortField::Rating;
+    default: return std::nullopt;
+    }
+}
 
 juce::String utf8(const std::string& s) { return juce::String::fromUTF8(s.c_str()); }
 
@@ -44,11 +58,18 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     }
 
     auto& header = table_.getHeader();
-    header.addColumn("Name", kName, 400, 120, -1, juce::TableHeaderComponent::notSortable);
-    header.addColumn("Type", kType, 76, 60, 120, juce::TableHeaderComponent::notSortable);
-    header.addColumn("BPM", kBpm, 70, 50, 120, juce::TableHeaderComponent::notSortable);
-    header.addColumn("Key", kKey, 56, 40, 100, juce::TableHeaderComponent::notSortable);
-    header.addColumn("Length", kLength, 72, 50, 120, juce::TableHeaderComponent::notSortable);
+    using Header = juce::TableHeaderComponent;
+    const int fixed = Header::visible | Header::notSortable; // neither sorts nor resizes
+    const int sorts = Header::visible | Header::resizable | Header::sortable;
+    const int plain = Header::visible | Header::resizable | Header::notSortable;
+    header.addColumn({}, kFavourite, kStarColumn, kStarColumn, kStarColumn, fixed);
+    header.addColumn("Name", kName, 400, 120, -1, sorts);
+    header.addColumn("Type", kType, 76, 60, 120, plain);
+    header.addColumn("BPM", kBpm, 70, 50, 120, sorts);
+    header.addColumn("Key", kKey, 56, 40, 100, sorts);
+    header.addColumn("Length", kLength, 72, 50, 120, sorts);
+    header.addColumn("Rating", kRating, 88, 70, 120, sorts);
+    header.addColumn("Tags", kTags, 140, 60, 400, plain);
     header.setStretchToFitActive(true);
     table_.setHeaderHeight(theme::kHeaderRowHeight);
     table_.setRowHeight(theme::kRowHeight);
@@ -133,8 +154,28 @@ void AsmaEditor::loadState()
         top_.linkChip().setToggleState(state.link, juce::dontSendNotification);
     }
     browser_.setSearch(state.search);
+    {
+        // The header shows the saved sort; that is not the user sorting.
+        const juce::ScopedValueSetter quiet(quietSort_, true);
+        for (int column = kFavourite; column <= kTags; ++column)
+            if (sortFor(column) == state.search.sort) table_.getHeader().setSortColumnId(column, !state.search.descending);
+    }
     table_.updateContent();
     showSelection();
+}
+
+void AsmaEditor::sortOrderChanged(int newSortColumnId, bool isForwards)
+{
+    const auto field = sortFor(newSortColumnId);
+    if (quietSort_ || !field) return;
+    SearchModel model = browser_.searchModel();
+    model.sort = *field;
+    model.descending = !isForwards;
+    browser_.setSearch(model);
+    processor_.updateState([&](PluginState& s) { s.search = model; });
+    table_.updateContent();
+    showSelection(); // the selection keeps its sample, on its new row
+    updateReadouts();
 }
 
 void AsmaEditor::paint(juce::Graphics& g)
@@ -393,10 +434,36 @@ void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, in
     juce::Colour colour = theme::text;
     int x = 0;
     switch (column) {
+    case kFavourite:
+        g.setFont(theme::font(theme::Face::Text, 13.0f));
+        g.setColour(r.favourite ? theme::amber : theme::faint);
+        g.drawText(juce::String::fromUTF8(r.favourite ? "\u2605" : "\u2606"), AsmaLookAndFeel::kTableMargin, 0, 20,
+                   height - 1, juce::Justification::centredLeft, false);
+        return;
+    case kRating: {
+        // Lit stars for the rating, faint ones for the rest.
+        const int lit = r.rating.value_or(0);
+        g.setFont(theme::font(theme::Face::Text, 11.0f).withExtraKerningFactor(0.15f));
+        juce::String on, off;
+        for (int i = 0; i < 5; ++i) (i < lit ? on : off) << juce::String::fromUTF8("\u2605");
+        const int onWidth = static_cast<int>(std::ceil(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), on)));
+        g.setColour(theme::amber);
+        g.drawText(on, 0, 0, onWidth, height - 1, juce::Justification::centredLeft, false);
+        g.setColour(theme::faint);
+        g.drawText(off, onWidth, 0, width - onWidth, height - 1, juce::Justification::centredLeft, false);
+        return;
+    }
+    case kTags: {
+        juce::StringArray tags;
+        for (const auto& t : r.tags) tags.add(utf8(t));
+        text = tags.joinIntoString(", ");
+        font = theme::font(theme::Face::Text, 12.0f);
+        colour = theme::muted;
+        break;
+    }
     case kName:
         text = utf8(r.name);
         font = theme::font(theme::Face::Text, 13.0f);
-        x = AsmaLookAndFeel::kTableMargin;
         break;
     case kType:
         text = !r.isLoop ? "" : (*r.isLoop ? "loop" : "one-shot");

@@ -363,3 +363,64 @@ TEST_CASE("the footer and the drag agree on the tempo before any audio has run",
     CHECK(editor->preview().tempoChip().detail() == juce::String::fromUTF8("120 \u2192 180 \u00b7 x1.50"));
     p.editorBeingDeleted(editor.get());
 }
+
+TEST_CASE("the table shows the design's columns, and only some of them sort", "[editor]")
+{
+    EditorRig rig;
+    auto& header = rig.editor->table().getHeader();
+    REQUIRE(header.getNumColumns(true) == 8);
+    juce::StringArray names;
+    for (int i = 0; i < header.getNumColumns(true); ++i) names.add(header.getColumnName(header.getColumnIdOfIndex(i, true)));
+    CHECK(names.joinIntoString(",") == ",Name,Type,BPM,Key,Length,Rating,Tags"); // the favourite star has no title
+    // A column that does not sort leaves the search's sort alone.
+    for (int i = 0; i < header.getNumColumns(true); ++i) {
+        const int id = header.getColumnIdOfIndex(i, true);
+        if (header.getColumnName(id) != "Type" && header.getColumnName(id) != "Tags") continue;
+        header.setSortColumnId(id, false);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+        CHECK(rig.p->pluginState().search.sort == SortField::Name);
+        CHECK_FALSE(rig.p->pluginState().search.descending);
+    }
+}
+
+TEST_CASE("clicking a header sorts the table and the project keeps it", "[editor]")
+{
+    EditorRig rig;
+    auto& header = rig.editor->table().getHeader();
+    int length = 0;
+    for (int i = 0; i < header.getNumColumns(true); ++i)
+        if (header.getColumnName(header.getColumnIdOfIndex(i, true)) == "Length") length = header.getColumnIdOfIndex(i, true);
+    REQUIRE(length > 0);
+    header.setSortColumnId(length, false); // longest first, as a second click would
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.p->pluginState().search.sort == SortField::Duration);
+    CHECK(rig.p->pluginState().search.descending);
+    rig.editor->table().selectRow(0);
+    CHECK(fs::equivalent(fromUtf8(rig.p->pluginState().selected), rig.f.loop)); // 2 s, the longest
+
+    app::PluginState s = rig.p->pluginState(); // a project saved sorted by BPM opens sorted by BPM
+    s.search.sort = SortField::Bpm;
+    s.search.descending = false;
+    rig.p->setPluginState(s);
+    rig.editor->poll();
+    CHECK(header.getSortColumnId() != length);
+    CHECK(header.isSortedForwards());
+}
+
+TEST_CASE("re-sorting keeps the selection on its sample, on its new row", "[editor]")
+{
+    EditorRig rig;
+    rig.editor->table().selectRow(rig.editor->table().getNumRows() - 1); // by name: the snare, last
+    const auto selected = fromUtf8(rig.p->pluginState().selected);
+    auto& header = rig.editor->table().getHeader();
+    for (int i = 0; i < header.getNumColumns(true); ++i)
+        if (header.getColumnName(header.getColumnIdOfIndex(i, true)) == "Length")
+            header.setSortColumnId(header.getColumnIdOfIndex(i, true), false); // longest first: the snare is still last
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    for (int i = 0; i < header.getNumColumns(true); ++i)
+        if (header.getColumnName(header.getColumnIdOfIndex(i, true)) == "Length")
+            header.setSortColumnId(header.getColumnIdOfIndex(i, true), true); // shortest first: now first
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.editor->table().getSelectedRow() == 0);
+    CHECK(fromUtf8(rig.p->pluginState().selected) == selected); // the same sample, not row 2's
+}

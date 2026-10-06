@@ -101,13 +101,19 @@ void AsmaLookAndFeel::drawTableHeaderBackground(juce::Graphics& g, juce::TableHe
 }
 
 void AsmaLookAndFeel::drawTableHeaderColumn(juce::Graphics& g, juce::TableHeaderComponent& header, const juce::String& name,
-                                            int columnId, int width, int height, bool, bool, int)
+                                            int columnId, int width, int height, bool, bool, int columnFlags)
 {
-    // The first column starts at the table's margin, as its cells do.
+    // The first column starts at the table's margin, as its cells do; the
+    // sorted one is lit, with an arrow for its direction.
+    using Header = juce::TableHeaderComponent;
     const int x = header.getIndexOfColumnId(columnId, true) == 0 ? kTableMargin : 0;
+    const bool up = (columnFlags & Header::sortedForwards) != 0, down = (columnFlags & Header::sortedBackwards) != 0;
+    juce::String text = name.toUpperCase();
+    if (up) text << juce::String::fromUTF8(" \u25b4");
+    if (down) text << juce::String::fromUTF8(" \u25be");
     g.setFont(theme::font(theme::Face::Heading, 11.0f).withExtraKerningFactor(0.06f));
-    g.setColour(theme::muted);
-    g.drawText(name.toUpperCase(), x, 0, width - x, height - 1, juce::Justification::centredLeft, true);
+    g.setColour(up || down ? theme::text : theme::muted);
+    g.drawText(text, x, 0, width - x, height - 1, juce::Justification::centredLeft, true);
 }
 
 void AsmaLookAndFeel::drawScrollbar(juce::Graphics& g, juce::ScrollBar&, int x, int y, int width, int height, bool vertical,

@@ -59,12 +59,13 @@ public:
     void clearRenders();
 
 private:
-    enum Column { kName = 1, kType, kBpm, kKey, kLength };
+    enum Column { kFavourite = 1, kName, kType, kBpm, kKey, kLength, kRating, kTags };
     // TableListBoxModel
     int getNumRows() override;
     void paintRowBackground(juce::Graphics& g, int row, int width, int height, bool selected) override;
     void paintCell(juce::Graphics& g, int row, int column, int width, int height, bool selected) override;
     void selectedRowsChanged(int lastRowSelected) override;
+    void sortOrderChanged(int newSortColumnId, bool isForwards) override;
     void returnKeyPressed(int lastRowSelected) override;
     juce::var getDragSourceDescription(const juce::SparseSet<int>& rows) override;
     void timerCallback() override;
@@ -90,6 +91,7 @@ private:
     std::unique_ptr<juce::FileChooser> chooser_;
     juce::String scanMessage_; // the last scan's outcome, until the next selection
     bool quietSelection_ = false;    // selection changes that must not play
+    bool quietSort_ = false;         // a header showing the saved sort is not a new sort
     std::uint64_t loadedStates_ = 0; // the processor's stateLoads() the controls show
     int ticks_ = 0;
     // What the readouts know about the selection.

@@ -6,8 +6,9 @@ UI") rebuilt as `main.html`, with these changes and nothing else:
 
 - The rows, the search, the count, the file line and the tempo are the test's
   demo library and state, not the design's sample data.
-- The areas plan 3c2b fills are blank: the sidebar, the chip row, the Similar
-  list, and the favourite, rating and tags columns.
+- The areas plan 3c2b fills are blank: the sidebar, the chip row and the Similar
+  list. The demo library has no favourites or ratings, so those columns show
+  faint stars.
 - The sample is stopped (a play button, no playhead), and the Key and Start
   chips say what they say when off ("off", "now"), so the picture is
   deterministic.
