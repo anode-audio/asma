@@ -136,3 +136,34 @@ TEST_CASE("restoring a project over a broken library does not take the host down
     CHECK_NOTHROW(p.setStateInformation(json.data(), static_cast<int>(json.size())));
     CHECK(p.pluginState().selected == s.selected);
 }
+
+TEST_CASE("a project whose sample has gone leaves nothing to play", "[state]")
+{
+    TempDir dir;
+    const auto file = dir.path() / "a.wav";
+    test::writeWavFloat(file, 48000, {std::vector<float>(48000, 0.25f)});
+    app::AsmaProcessor p;
+    p.prepareToPlay(48000.0, 512);
+    PluginState s;
+    s.selected = toUtf8(file);
+    p.setPluginState(s);
+    REQUIRE(asma::test::waitForPreview(p, p.engine().selected()));
+
+    PluginState gone;
+    gone.selected = toUtf8(dir.path() / "gone.wav");
+    p.setPluginState(gone);
+    REQUIRE(asma::test::waitForPreview(p, p.engine().selected()));
+    CHECK(p.engine().status().failed);
+    CHECK(p.pluginState().selected == gone.selected); // kept: the drive may come back
+    p.engine().play();
+    juce::AudioBuffer<float> buffer(2, 512);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    float loudest = 0.0f;
+    for (int i = 0; i < 20; ++i) {
+        p.processBlock(buffer, midi);
+        midi.clear();
+        loudest = std::max(loudest, buffer.getMagnitude(0, 512));
+    }
+    CHECK(loudest == 0.0f); // neither play nor a MIDI note sounds the old sample
+}

@@ -110,20 +110,22 @@ void AsmaProcessor::setPluginState(const PluginState& given)
     engine_.setGainMatch(state.gainMatch);
     engine_.setQuantise(state.quantise);
     engine_.setEdits(state.edits);
-    if (!state.selected.empty()) {
-        std::filesystem::path path;
-        try {
-            path = fromUtf8(state.selected); // throws on Windows for bytes that are not UTF-8
-        } catch (const std::exception&) {
-            return;
-        }
-        std::error_code ec;
+    std::filesystem::path path;
+    try {
+        path = fromUtf8(state.selected); // throws on Windows for bytes that are not UTF-8
+    } catch (const std::exception&) {
+        path.clear();
+    }
+    std::error_code ec;
+    if (!path.empty() && std::filesystem::exists(path, ec)) {
         // Its tempo and key come from the library, so a restored loop syncs.
-        if (std::filesystem::exists(path, ec)) {
-            LibraryView library(libraryPath_);
-            library.refresh();
-            engine_.select(path, library.infoFor(path), false);
-        }
+        LibraryView library(libraryPath_);
+        library.refresh();
+        engine_.select(path, library.infoFor(path), false);
+    } else {
+        // Nothing to play: drop the old selection rather than keep sounding
+        // a sample the project does not name. The saved path stays.
+        engine_.select(path, {}, false);
     }
 }
 
