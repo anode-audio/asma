@@ -49,6 +49,11 @@ public:
     std::int64_t sampleCount();
     // What the model matches, past the page search() returns. 0 unless open.
     std::int64_t matchCount(const SearchModel& model);
+    // Where the file falls in the model's order, from 0; nothing when it does
+    // not match, or the library is not open.
+    std::optional<std::int64_t> position(const SearchModel& model, std::int64_t fileId);
+    // The library's id for a file, by its path; nothing when it is not in it.
+    std::optional<std::int64_t> fileId(const std::filesystem::path& file);
     audio::SampleInfo info(std::int64_t fileId);
     // The file's content hash, or empty when unknown.
     std::string contentHash(std::int64_t fileId);

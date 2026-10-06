@@ -87,6 +87,21 @@ std::int64_t LibraryView::matchCount(const SearchModel& model)
     return guarded([&] { return asma::countSearch(*db_, model); }, std::int64_t{0});
 }
 
+std::optional<std::int64_t> LibraryView::position(const SearchModel& model, std::int64_t fileId)
+{
+    return guarded([&] { return asma::searchPosition(*db_, model, fileId); }, std::optional<std::int64_t>{});
+}
+
+std::optional<std::int64_t> LibraryView::fileId(const std::filesystem::path& file)
+{
+    return guarded(
+        [&]() -> std::optional<std::int64_t> {
+            const auto record = Library(*db_).fileByAbsolutePath(file);
+            return record ? std::optional<std::int64_t>(record->id) : std::nullopt;
+        },
+        std::optional<std::int64_t>{});
+}
+
 std::int64_t LibraryView::sampleCount()
 {
     return guarded(

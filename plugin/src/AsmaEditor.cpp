@@ -300,10 +300,9 @@ void AsmaEditor::selectionChanged()
     selectedRow_ = table_.getSelectedRow();
     selectedInfo_ = selectedRow_ >= 0 ? browser_.info(selectedRow_) : audio::SampleInfo{};
     selectedFolder_.clear();
-    if (selectedRow_ >= 0) {
-        const auto& rel = browser_.rows()[static_cast<std::size_t>(selectedRow_)].relPath;
-        const auto slash = rel.find_last_of('/');
-        if (slash != std::string::npos) selectedFolder_ = rel.substr(0, slash);
+    if (const SearchRow* r = browser_.row(selectedRow_)) {
+        const auto slash = r->relPath.find_last_of('/');
+        if (slash != std::string::npos) selectedFolder_ = r->relPath.substr(0, slash);
     }
 }
 
@@ -314,7 +313,7 @@ void AsmaEditor::updateReadouts()
     const bool current = status.generation == processor_.engine().selected(); // the status is the selection's
 
     // The top bar.
-    top_.setCount(static_cast<int>(browser_.matches()), static_cast<int>(browser_.total()));
+    top_.setCount(browser_.count(), static_cast<int>(browser_.total()));
     if (!processor_.isStandalone()) top_.setHostBpm(processor_.hostBpm());
 
     // The table, or what it says instead.
@@ -325,7 +324,7 @@ void AsmaEditor::updateReadouts()
                            : "No library yet. Open the asma app and add a folder of samples.";
     else if (library_.state() != LibraryState::Open)
         empty = juce::String(library_.message());
-    else if (browser_.rows().empty())
+    else if (browser_.count() == 0)
         empty = browser_.searchModel().text.empty() ? (standalone ? "The library is empty. Add a folder of samples."
                                                                   : "The library is empty.")
                                                     : "No samples match.";
@@ -335,8 +334,8 @@ void AsmaEditor::updateReadouts()
                                && library_.state() != LibraryState::Unreadable && browser_.searchModel().text.empty());
 
     // The preview.
-    if (selectedRow_ >= 0 && selectedRow_ < static_cast<int>(browser_.rows().size())) {
-        const SearchRow& r = browser_.rows()[static_cast<std::size_t>(selectedRow_)];
+    if (const SearchRow* row = browser_.row(selectedRow_)) {
+        const SearchRow& r = *row;
         const auto overview = processor_.engine().overview();
         preview_.waveform().setOverview(overview);
         preview_.setFile(utf8(r.name), overview ? PreviewPanel::fileLine(selectedFolder_, overview->sampleRate,
@@ -370,7 +369,7 @@ void AsmaEditor::updateReadouts()
     footer_.setStatus(scans && scans->busy() ? juce::String(scans->progress()) : scanMessage_);
 }
 
-int AsmaEditor::getNumRows() { return static_cast<int>(browser_.rows().size()); }
+int AsmaEditor::getNumRows() { return browser_.count(); }
 
 void AsmaEditor::paintRowBackground(juce::Graphics& g, int, int width, int height, bool selected)
 {
@@ -386,7 +385,9 @@ void AsmaEditor::paintRowBackground(juce::Graphics& g, int, int width, int heigh
 void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, int height, bool)
 {
     if (row < 0 || row >= getNumRows()) return;
-    const SearchRow& r = browser_.rows()[static_cast<std::size_t>(row)];
+    const SearchRow* found = browser_.row(row);
+    if (!found) return;
+    const SearchRow& r = *found;
     juce::String text;
     juce::Font font = theme::font(theme::Face::Mono, 12.0f);
     juce::Colour colour = theme::text;
