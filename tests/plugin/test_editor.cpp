@@ -2,6 +2,7 @@
 #include "AsmaEditor.h"
 #include "LibraryFixture.h"
 #include "PluginTestUtil.h"
+#include "asma/core/Analyser.h"
 #include "asma/core/UserData.h"
 #include "asma/audio/Render.h"
 #include "asma/core/Fs.h"
@@ -534,4 +535,65 @@ TEST_CASE("the Instrument popover lists the library's tags", "[editor]")
     const auto tags = rig.editor->popoverContext().tags;
     REQUIRE_FALSE(tags.empty());
     CHECK(tags.front().count >= 1);
+}
+
+namespace {
+
+// An editor over an analysed library, so Similar has sound profiles.
+struct AnalysedRig : EditorRig {
+    AnalysedRig()
+    {
+        {
+            Db db = Db::open(f.dbPath);
+            analysePending(db);
+        }
+        editor->poll();
+    }
+};
+
+} // namespace
+
+TEST_CASE("picking a similar sample auditions it, and the table follows when it shows it", "[editor]")
+{
+    AnalysedRig rig;
+    rig.type("");
+    rig.editor->table().selectRow(rig.editor->table().getNumRows() - 1); // whatever is last
+    auto& similar = rig.editor->similar();
+    REQUIRE(similar.rowCount() == 2);
+    const juce::String name = similar.row(0).getButtonText();
+    similar.row(0).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(fromUtf8(rig.p->pluginState().selected).filename().string() == name.toStdString());
+    const int row = rig.editor->table().getSelectedRow();
+    REQUIRE(row >= 0);
+    CHECK(rig.editor->table().getNumRows() == 3);
+    CHECK(rig.p->engine().selected() > 0);
+}
+
+TEST_CASE("a similar sample the search does not show still plays, without a table row", "[editor]")
+{
+    AnalysedRig rig;
+    rig.type("kick");
+    rig.editor->table().selectRow(0);
+    auto& similar = rig.editor->similar();
+    REQUIRE(similar.rowCount() == 2);
+    similar.row(0).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.editor->table().getSelectedRow() < 0); // not in the search
+    const auto picked = fromUtf8(rig.p->pluginState().selected);
+    CHECK_FALSE(fs::equivalent(picked, rig.f.kick));
+    REQUIRE(rig.playing());
+    rig.editor->poll(); // a library check does not drop it
+    CHECK(fromUtf8(rig.p->pluginState().selected) == picked);
+    CHECK(rig.editor->footer().dragText().isNotEmpty()); // the preview and footer describe it
+}
+
+TEST_CASE("the Similar list says when nothing is selected or analysed", "[editor]")
+{
+    EditorRig rig; // scanned, not analysed
+    CHECK(rig.editor->similar().message() == "Select a sample");
+    rig.type("kick");
+    rig.editor->table().selectRow(0);
+    rig.editor->poll();
+    CHECK(rig.editor->similar().message() == "Not analysed yet");
 }

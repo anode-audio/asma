@@ -10,6 +10,7 @@
 #include "ui/Footer.h"
 #include "ui/PreviewPanel.h"
 #include "ui/SidebarView.h"
+#include "ui/SimilarView.h"
 #include "ui/TopBar.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -52,6 +53,7 @@ public:
     TopBar& topBar() { return top_; }
     SidebarView& sidebar() { return sidebar_; }
     ChipRow& chipRow() { return chips_; }
+    SimilarView& similar() { return similar_; }
     // What a chip's popover needs: the library's tags and the tempo in force.
     PopoverContext popoverContext();
     // The standalone's tempo source and folders; hidden in a plugin.
@@ -87,6 +89,8 @@ private:
     void showSelection();   // selects the saved file's row without playing it
     void loadState();       // every control from the processor's state
     void selectionChanged(); // re-reads what the readouts need about the selection
+    void pickSimilar(const SearchRow& row);
+    void select(const SearchRow& row); // auditions it as the selection, as it is
     void updateReadouts();  // the preview, the chips, the footer, the empty state
     void updateRenderSize();
 
@@ -97,6 +101,7 @@ private:
     TopBar top_;
     SidebarView sidebar_;
     ChipRow chips_;
+    SimilarView similar_;
     std::vector<SidebarEntry> entries_; // what the sidebar lists
     juce::TableListBox table_{"Samples", this};
     juce::Label empty_;
@@ -110,7 +115,8 @@ private:
     std::uint64_t loadedStates_ = 0; // the processor's stateLoads() the controls show
     int ticks_ = 0;
     // What the readouts know about the selection.
-    int selectedRow_ = -1;
+    std::optional<SearchRow> selected_; // the selection, in the table or not (a Similar pick)
+    std::int64_t similarFor_ = 0;       // the sample the Similar list is about
     audio::SampleInfo selectedInfo_;
     std::string selectedFolder_;
 

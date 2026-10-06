@@ -52,6 +52,8 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     };
     addAndMakeVisible(sidebar_);
     chips_.onChange = [this](const SearchModel& model) { applySearch(model); };
+    similar_.onPick = [this](const SearchRow& row) { pickSimilar(row); };
+    addAndMakeVisible(similar_);
     chips_.onOpen = [this](Facet facet, juce::Component& anchor) {
         auto popover = makeFilterPopover(facet, browser_.searchModel(), popoverContext(),
                                          [this](const SearchModel& model) { applySearch(model); });
@@ -216,7 +218,7 @@ void AsmaEditor::resized()
     footer_.setBounds(area.removeFromBottom(theme::kFooterHeight));
     auto bottom = area.removeFromBottom(theme::kPreviewHeight);
     bottom.removeFromTop(1);
-    bottom.removeFromRight(theme::kSimilarWidth);
+    similar_.setBounds(bottom.removeFromRight(theme::kSimilarWidth).withTrimmedLeft(1));
     preview_.setBounds(bottom);
     sidebar_.setBounds(area.removeFromLeft(theme::kSidebarWidth));
     chips_.setBounds(area.removeFromTop(theme::kChipRowHeight));
@@ -363,13 +365,47 @@ void AsmaEditor::showSelection()
 
 void AsmaEditor::selectionChanged()
 {
-    selectedRow_ = table_.getSelectedRow();
-    selectedInfo_ = selectedRow_ >= 0 ? browser_.info(selectedRow_) : audio::SampleInfo{};
-    selectedFolder_.clear();
-    if (const SearchRow* r = browser_.row(selectedRow_)) {
-        const auto slash = r->relPath.find_last_of('/');
-        if (slash != std::string::npos) selectedFolder_ = r->relPath.substr(0, slash);
+    if (const SearchRow* r = browser_.row(table_.getSelectedRow())) {
+        selected_ = *r;
+    } else {
+        // No row: keep a Similar pick the search does not show, as long as it
+        // is still the project's selection.
+        const bool kept = selected_ && toUtf8(LibraryView::pathOf(*selected_)) == processor_.pluginState().selected;
+        if (!kept) selected_.reset();
     }
+    selectedInfo_ = selected_ ? library_.info(selected_->id) : audio::SampleInfo{};
+    selectedFolder_.clear();
+    if (selected_) {
+        const auto slash = selected_->relPath.find_last_of('/');
+        if (slash != std::string::npos) selectedFolder_ = selected_->relPath.substr(0, slash);
+    }
+    const std::int64_t id = selected_ ? selected_->id : 0;
+    if (id != similarFor_) {
+        similarFor_ = id;
+        if (id) similar_.setResult(library_.similar(id));
+        else similar_.clear();
+    }
+}
+
+void AsmaEditor::select(const SearchRow& row)
+{
+    scanMessage_.clear();
+    processor_.select(LibraryView::pathOf(row), library_.info(row.id));
+    preview_.setEdits({}); // a new selection plays as it is
+}
+
+void AsmaEditor::pickSimilar(const SearchRow& row)
+{
+    select(row);
+    selected_ = row;
+    const int at = browser_.rowOf(LibraryView::pathOf(row));
+    {
+        const juce::ScopedValueSetter quiet(quietSelection_, true); // already playing
+        if (at >= 0) table_.selectRow(at);
+        else table_.deselectAllRows();
+    }
+    selectionChanged();
+    updateReadouts();
 }
 
 void AsmaEditor::updateReadouts()
@@ -404,8 +440,8 @@ void AsmaEditor::updateReadouts()
     emptyAddFolder_.setVisible(standalone && nothing);
 
     // The preview.
-    if (const SearchRow* row = browser_.row(selectedRow_)) {
-        const SearchRow& r = *row;
+    if (selected_) {
+        const SearchRow& r = *selected_;
         const auto overview = processor_.engine().overview();
         preview_.waveform().setOverview(overview);
         preview_.setFile(utf8(r.name), overview ? PreviewPanel::fileLine(selectedFolder_, overview->sampleRate,
@@ -419,7 +455,7 @@ void AsmaEditor::updateReadouts()
     preview_.setPlaying(status.playing);
     audio::SyncSettings sync = state.sync;
     sync.hostBpm = processor_.tempoInForce();
-    preview_.setTempo(state.sync.tempo, selectedRow_ >= 0 ? tempoChip(selectedInfo_, sync, current && status.failed)
+    preview_.setTempo(state.sync.tempo, selected_ ? tempoChip(selectedInfo_, sync, current && status.failed)
                                                           : ChipText{state.sync.tempo ? "" : "off", Tone::Muted});
     std::string keyStatus;
     if (current && status.keyUnsure) keyStatus = "?";
@@ -428,7 +464,7 @@ void AsmaEditor::updateReadouts()
     preview_.setKey(state.sync.key, std::string(state.sync.projectKey.view()), keyStatus);
 
     // The footer.
-    if (selectedRow_ >= 0) {
+    if (selected_) {
         const audio::RenderSettings drag =
             dragSettings(state.edits, audio::planSync(selectedInfo_, sync), static_cast<int>(processor_.sampleRate()));
         footer_.setDrag(utf8(dragSummary(drag, selectedInfo_.bpm)));
@@ -515,10 +551,8 @@ void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, in
 void AsmaEditor::selectedRowsChanged(int lastRowSelected)
 {
     selectionChanged();
-    if (quietSelection_ || lastRowSelected < 0) return;
-    scanMessage_.clear();
-    processor_.select(browser_.path(lastRowSelected), selectedInfo_);
-    preview_.setEdits({}); // a new selection plays as it is
+    if (quietSelection_ || lastRowSelected < 0 || !selected_) return;
+    select(*selected_);
     updateReadouts();
 }
 
@@ -532,18 +566,17 @@ juce::var AsmaEditor::getDragSourceDescription(const juce::SparseSet<int>& rows)
 bool AsmaEditor::shouldDropFilesWhenDraggedExternally(const juce::DragAndDropTarget::SourceDetails&,
                                                       juce::StringArray& files, bool& canMoveFiles)
 {
-    const int row = table_.getSelectedRow();
-    if (row < 0) return false;
+    if (!selected_) return false;
     canMoveFiles = false;
-    const auto path = browser_.path(row);
+    const auto path = LibraryView::pathOf(*selected_);
     const PluginState state = processor_.pluginState();
     audio::SyncSettings sync = state.sync;
     sync.hostBpm = processor_.tempoInForce();
     const audio::RenderSettings settings =
-        dragSettings(state.edits, audio::planSync(browser_.info(row), sync), static_cast<int>(processor_.sampleRate()));
+        dragSettings(state.edits, audio::planSync(selectedInfo_, sync), static_cast<int>(processor_.sampleRate()));
     std::filesystem::path file = path;
     try {
-        file = audio::RenderStore(audio::RenderStore::defaultDir()).fileFor(path, settings, browser_.contentHash(row));
+        file = audio::RenderStore(audio::RenderStore::defaultDir()).fileFor(path, settings, library_.contentHash(selected_->id));
     } catch (const std::exception&) {
         // A render that fails still leaves the original to drag.
     }
