@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "ui/ChipRow.h"
+#include "ui/Theme.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -103,4 +104,17 @@ TEST_CASE("a set chip is wide enough for its whole label beside its x", "[chips]
     CHECK(chip.getWidth() == chip.idealWidth());
     CHECK(chip.textArea().getRight() <= chip.clearButton().getX()); // the label stops before the x
     CHECK(chip.textArea().getWidth() >= chip.labelWidth());         // and is not cut short
+}
+
+TEST_CASE("the chips hold no font past JUCE's shutdown", "[chips]")
+{
+    juce::Typeface::Ptr inter;
+    {
+        const juce::ScopedJuceInitialiser_GUI gui;
+        ChipRow row;
+        row.setBounds(0, 0, 1060, 44);
+        row.setModel(loopsAt120()); // measures and paints its labels
+        inter = app::theme::typeface(app::theme::Face::Text);
+    }
+    CHECK(inter->getReferenceCount() == 1); // only this test still holds the face
 }

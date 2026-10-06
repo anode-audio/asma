@@ -17,11 +17,9 @@ constexpr int kPad = 10;
 constexpr int kGap = 8;
 constexpr int kMargin = 14;
 
-const juce::Font& chipFont()
-{
-    static const juce::Font font = theme::font(theme::Face::Text, 12.0f);
-    return font;
-}
+// Made each time, never kept in a static: a font held past JUCE's shutdown
+// can crash a host as it unloads the plugin.
+juce::Font chipFont() { return theme::font(theme::Face::Text, 12.0f); }
 
 // The chip's own area: transparent, the pill draws everything.
 class Invisible final : public juce::Button {
