@@ -5,6 +5,7 @@
 #include "asma/core/Fs.h"
 #include "asma/core/Library.h"
 #include "asma/core/Schema.h"
+#include "asma/core/Similar.h"
 
 namespace asma::app {
 
@@ -115,6 +116,30 @@ std::vector<Collection> LibraryView::collections()
 std::vector<SavedSearch> LibraryView::savedSearches()
 {
     return guarded([&] { return UserData(*db_).savedSearches(); }, std::vector<SavedSearch>{});
+}
+
+SimilarResult LibraryView::similar(std::int64_t fileId, int limit)
+{
+    return guarded(
+        [&] {
+            SimilarResult out;
+            auto analysed = db_->prepare("SELECT feature_vector IS NOT NULL FROM features WHERE file_id = ?");
+            analysed.bind(1, fileId);
+            if (!analysed.step() || analysed.getInt(0) == 0) {
+                out.state = SimilarResult::State::NotAnalysed;
+                return out;
+            }
+            const auto found = findSimilar(*db_, fileId, limit);
+            std::vector<std::int64_t> ids;
+            for (const auto& m : found) ids.push_back(m.id);
+            const auto rows = rowsForIds(*db_, ids); // in the order asked
+            for (const auto& row : rows)
+                for (const auto& m : found)
+                    if (m.id == row.id) out.matches.push_back({row, 1.0 - m.similarity});
+            out.state = SimilarResult::State::Ok;
+            return out;
+        },
+        SimilarResult{});
 }
 
 std::vector<TagCount> LibraryView::tagCounts()

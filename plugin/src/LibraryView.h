@@ -27,6 +27,21 @@ enum class LibraryState {
 // The library as the UI sees it: opened read-only (so it works inside a
 // host), never created, and watched for other processes' writes. Message
 // thread only.
+// The samples that sound most like one, nearest first.
+struct SimilarResult {
+    enum class State {
+        Ok,          // matches, possibly none
+        NotAnalysed, // the sample has no sound profile yet
+        Failed,      // the query failed, or the library is not open
+    };
+    struct Match {
+        SearchRow row;
+        double distance = 0.0; // 0 sounds the same; 1 minus the similarity
+    };
+    State state = State::Failed;
+    std::vector<Match> matches;
+};
+
 class LibraryView {
 public:
     // ReadOnly inside a host. The standalone may migrate an older library
@@ -51,6 +66,8 @@ public:
     std::vector<Root> roots();
     std::vector<Collection> collections();
     std::vector<SavedSearch> savedSearches();
+    // What sounds like the file, from analysed sound profiles.
+    SimilarResult similar(std::int64_t fileId, int limit = 10);
     // The tags searches can find, most used first; empty unless open.
     std::vector<TagCount> tagCounts();
     // Files in enabled folders that failed to decode or analyse: the
