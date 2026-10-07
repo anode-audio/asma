@@ -275,6 +275,9 @@ int cmdQuery(Args& args, Db& db)
 int main(int argc, char** argv)
 {
     setupConsole();
+    // The app runs asma hidden, as its helper: a crash must end it at once,
+    // never wait behind an error dialog nobody can see.
+    disableCrashDialogs();
     // The app runs asma as a helper with stderr closed: it asks for errors on
     // stdout, one line starting "error: ".
     bool errorsToStdout = false;

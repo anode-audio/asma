@@ -208,6 +208,19 @@ TEST_CASE("a missing helper is reported, not hidden", "[writer]")
     CHECK(error == "asma's command-line helper is missing");
 }
 
+TEST_CASE("a helper that crashes is reported as a crash", "[writer]")
+{
+    test::LibraryFixture f;
+    f.scan();
+    const juce::ScopedJuceInitialiser_GUI gui;
+    test::ScopedEnv crash("ASMA_FAKE_SCAN", "crash_start=1"); // the test child crashes at once
+    CliWriter writer(f.dbPath, ASMA_TEST_CHILD_PATH);
+    std::string error;
+    writer.write(Write::rate(idOf(f.dbPath, f.loop), 3), [&](const std::string& e) { error = e; });
+    settle(writer);
+    CHECK(error == "the helper crashed");
+}
+
 TEST_CASE("a retry waits for the scan, then reports that it finished", "[writer][retry]")
 {
     test::LibraryFixture f;

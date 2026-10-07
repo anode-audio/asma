@@ -421,3 +421,78 @@ TEST_CASE("retry refuses an unknown id and writes nothing", "[scanner][retry]")
     CHECK_THROWS_AS(retryFiles(f.db, {f.file("broken.wav").id, 9999}), std::invalid_argument);
     CHECK(f.file("broken.wav").status == FileStatus::Failed);
 }
+
+TEST_CASE("retry holds no write lock while it reads a file", "[scanner][retry]")
+{
+    TempDir dir;
+    const fs::path dbPath = dir.path() / "library.db";
+    const fs::path root = dir.path() / "lib";
+    test::writeBytes(root / "broken.wav", "not audio");
+    Db db = Db::open(dbPath);
+    Library lib(db);
+    const auto rootId = lib.addRoot(root);
+    scanRoot(db, rootId);
+    test::WavSpec spec;
+    spec.seed = 5;
+    test::writeWav(root / "broken.wav", spec);
+
+    bool wrote = false;
+    retryFiles(db, {lib.fileByPath(rootId, "broken.wav")->id}, [&](std::int64_t) {
+        // A rating made while the retry reads must not wait for it.
+        Db other = Db::open(dbPath);
+        other.exec("PRAGMA busy_timeout = 0");
+        CHECK_NOTHROW(other.exec("INSERT INTO collections(name) VALUES ('meanwhile')"));
+        wrote = true;
+    });
+    CHECK(wrote);
+    CHECK(lib.fileByPath(rootId, "broken.wav")->status == FileStatus::Ok);
+}
+
+TEST_CASE("a file that crashes a retry costs only itself, and goes last next time", "[scanner][retry]")
+{
+    Fixture f;
+    test::writeBytes(f.root / "a.wav", "not audio");
+    test::writeBytes(f.root / "b.wav", "not audio");
+    test::writeBytes(f.root / "c.wav", "not audio");
+    f.scan();
+    f.wav("b.wav", 5);
+    f.wav("c.wav", 6);
+    const auto a = f.file("a.wav").id, b = f.file("b.wav").id, c = f.file("c.wav").id;
+    const auto crashOn = [&](std::int64_t id) { return [id](std::int64_t probing) {
+        if (probing == id) throw std::runtime_error("stands in for a crash");
+    }; };
+
+    CHECK_THROWS(retryFiles(f.db, {b, a}, crashOn(a)));
+    CHECK(f.file("b.wav").status == FileStatus::Ok); // done before the crash, and kept
+    CHECK(f.file("a.wav").failureReason == kCrashedReason);
+
+    CHECK_THROWS(retryFiles(f.db, {a, c}, crashOn(a))); // a goes last: c is done first
+    CHECK(f.file("c.wav").status == FileStatus::Ok);
+}
+
+TEST_CASE("retry leaves an ok file it cannot reach as it is", "[scanner][retry]")
+{
+    Fixture f;
+    f.wav("silent.wav", 3);
+    f.scan();
+    f.lib.setAnalysisError(f.file("silent.wav").id, "the file is silent");
+    fs::remove(f.root / "silent.wav"); // a drive unplugged, say
+
+    const RetryStats r = retryFiles(f.db, {f.file("silent.wav").id});
+    CHECK(r.skipped == 1);
+    CHECK(r.readable.empty());
+    CHECK(f.file("silent.wav").status == FileStatus::Ok); // still in the library
+    CHECK(f.lib.problems().size() == 1);                  // still with its old reason
+    CHECK(f.lib.problems()[0].reason == "the file is silent");
+}
+
+TEST_CASE("a scan reads again a failed file said to be gone once it is back", "[scanner][retry]")
+{
+    Fixture f;
+    f.wav("back.wav", 4);
+    f.scan();
+    f.lib.setStatus(f.file("back.wav").id, FileStatus::Failed, kGoneReason); // retried while away
+    f.scan(); // the file is there, unchanged
+    CHECK(f.file("back.wav").status == FileStatus::Ok);
+    CHECK(f.file("back.wav").failureReason.empty());
+}

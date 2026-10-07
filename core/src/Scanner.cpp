@@ -265,6 +265,11 @@ ScanStats scanRoot(Db& db, std::int64_t rootId, const ScanOptions& options)
                 continue;
             }
             const FileRecord& file = it->second;
+            // Retried while it was away: read it again now it is back.
+            if (file.failureReason == kGoneReason) {
+                jobs.push_back({JobKind::Changed, disk, file});
+                continue;
+            }
             if (file.size == disk.size && file.mtime == disk.mtime) {
                 if (file.status == FileStatus::Missing) {
                     // Back unchanged. A row that was failed before it went
@@ -322,7 +327,8 @@ ScanStats scanRoot(Db& db, std::int64_t rootId, const ScanOptions& options)
     return stats;
 }
 
-RetryStats retryFiles(Db& db, const std::vector<std::int64_t>& fileIds)
+RetryStats retryFiles(Db& db, const std::vector<std::int64_t>& fileIds,
+                      const std::function<void(std::int64_t fileId)>& beforeRead)
 {
     Library lib(db);
     struct Target {
@@ -336,34 +342,59 @@ RetryStats retryFiles(Db& db, const std::vector<std::int64_t>& fileIds)
         const auto root = lib.root(file->rootId);
         targets.push_back({std::move(*file), fromUtf8(root->path)});
     }
+    // A file that crashed a retry before goes last, so it cannot keep the
+    // others from being read.
+    std::stable_partition(targets.begin(), targets.end(),
+                          [](const Target& t) { return t.file.failureReason != kCrashedReason; });
 
+    const auto commit = [&](auto&& write) {
+        Transaction tx(db);
+        write();
+        tx.commit();
+    };
     RetryStats stats;
-    Transaction tx(db);
     for (const auto& [file, root] : targets) {
+        const bool wasOk = file.status == FileStatus::Ok;
         const fs::path full = root / fromUtf8(file.relPath);
         std::error_code ec;
-        const auto size = fs::file_size(full, ec);
-        const auto mtime = ec ? fs::file_time_type{} : fs::last_write_time(full, ec);
-        if (ec) {
-            lib.setStatus(file.id, FileStatus::Failed, "The file is gone");
-            ++stats.gone;
+        const bool exists = fs::exists(full, ec);
+        if (!ec && !exists) {
+            if (wasOk) ++stats.skipped; // a drive away, say: the next scan settles it
+            else {
+                commit([&] { lib.setStatus(file.id, FileStatus::Failed, kGoneReason); });
+                ++stats.gone;
+            }
             continue;
         }
+        const auto size = ec ? std::uintmax_t{0} : fs::file_size(full, ec);
+        const auto mtime = ec ? fs::file_time_type{} : fs::last_write_time(full, ec);
+        if (ec) { // cannot tell: leave the row as it is
+            ++(wasOk ? stats.skipped : stats.failed);
+            continue;
+        }
+        commit([&] { lib.setStatus(file.id, FileStatus::Failed, kCrashedReason); });
+        if (beforeRead) beforeRead(file.id);
         const Job job{JobKind::Changed, {file.relPath, static_cast<std::int64_t>(size), fileTimeToInt(mtime)}, file};
         const JobResult r = process(root, job);
+        if (!r.probe && r.unreadable && wasOk) {
+            commit([&] { lib.setStatus(file.id, file.status, file.failureReason); });
+            ++stats.skipped;
+            continue;
+        }
         if (!r.probe) {
-            lib.setStatus(file.id, FileStatus::Failed, r.error);
+            commit([&] { lib.setStatus(file.id, FileStatus::Failed, r.error); });
             ++stats.failed;
             continue;
         }
         FileRecord rec = recordFrom(file.rootId, job.disk, r);
         rec.id = file.id;
-        lib.updateFile(rec);
-        lib.resetAnalysis(rec.id);
-        lib.setDerived(rec.id, derive(r));
+        commit([&] {
+            lib.updateFile(rec);
+            lib.resetAnalysis(rec.id);
+            lib.setDerived(rec.id, derive(r));
+        });
         stats.readable.push_back(rec.id);
     }
-    tx.commit();
     return stats;
 }
 

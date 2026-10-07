@@ -37,7 +37,8 @@ if(ASMA_BUILD_PLUGIN)
     ASMA_TEST_UI="${CMAKE_CURRENT_SOURCE_DIR}/ui"
     ASMA_CLI_PATH="$<TARGET_FILE:asma>"
     ASMA_SCAN_PATH="$<TARGET_FILE:asma-scan>"
+    ASMA_TEST_CHILD_PATH="$<TARGET_FILE:asma_test_child>"
     JUCE_MODAL_LOOPS_PERMITTED=1) # lets a test run the message loop
-  add_dependencies(asma_plugin_tests asma asma-scan)
+  add_dependencies(asma_plugin_tests asma asma-scan asma_test_child)
   catch_discover_tests(asma_plugin_tests)
 endif()

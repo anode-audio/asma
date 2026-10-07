@@ -34,20 +34,32 @@ struct ScanOptions {
 // failure.
 ScanStats scanRoot(Db& db, std::int64_t rootId, const ScanOptions& options = {});
 
+// The reasons a retry gives: the file is not where the library says, or
+// reading it crashed the process doing the retry.
+inline constexpr std::string_view kGoneReason = "The file is gone";
+inline constexpr std::string_view kCrashedReason = "asma crashed reading it";
+
 struct RetryStats {
     std::vector<std::int64_t> readable; // read again: queued for analysis
     std::size_t failed = 0;             // still cannot be read; the reason is the new one
     std::size_t gone = 0;               // no longer where the library says
+    std::size_t skipped = 0;            // ok files that could not be reached: left as they are
 };
 
 // The Problems panel's retry: reads the files again whatever their size and
 // mtime, as a scan would a new file. A file read again is ok, its analysis
-// forgotten so analysePending (with fileIds) does it again; one that still
-// fails keeps the new reason; one that is gone is failed with "The file is
-// gone" (the next scan of its folder marks it missing). One transaction.
+// forgotten so analysePending (with fileIds) does it again; a failed file that
+// still fails keeps the new reason, and one that is gone says kGoneReason (a
+// scan reads it again once it is back). An ok file (its analysis failed) that
+// cannot be reached is left as it is. Files are read outside any transaction
+// and each outcome committed on its own, so writers never wait for the reads;
+// each file is marked kCrashedReason while it is read, so a file that crashes
+// the process costs only itself, and files so marked are read last.
 // Throws std::invalid_argument, writing nothing, for an id the library does
 // not know.
-RetryStats retryFiles(Db& db, const std::vector<std::int64_t>& fileIds);
+// `beforeRead`, for tests, is called before each file is read.
+RetryStats retryFiles(Db& db, const std::vector<std::int64_t>& fileIds,
+                      const std::function<void(std::int64_t fileId)>& beforeRead = {});
 
 // Records that relPath crashed the scanner, so later scans skip it until its
 // size or mtime changes. Creates the row if the file is not known yet.

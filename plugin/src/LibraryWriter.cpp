@@ -325,8 +325,8 @@ std::string CliLane::runStep(const std::vector<std::string>& step, const std::fu
         const std::lock_guard lock(mutex_);
         current_->process = nullptr;
     }
-    if (status.signalled || status.code != 0)
-        return error.empty() ? "the helper stopped with code " + std::to_string(status.code) : error;
+    if (status.signalled) return "the helper crashed";
+    if (status.code != 0) return error.empty() ? "the helper stopped with code " + std::to_string(status.code) : error;
     return {};
 }
 
