@@ -15,6 +15,7 @@
 #include "ui/PreviewPanel.h"
 #include "ui/SidebarView.h"
 #include "ui/SimilarView.h"
+#include "ui/TagsPopover.h"
 #include "ui/TopBar.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -87,6 +88,15 @@ public:
     static bool asksBeforeDeleting(const SidebarEntry& entry);
     // The chip row's Save search: names the search in force and saves it.
     std::unique_ptr<NamePopover> saveSearchPopover();
+    // A row's right-click menu: Add to collection (ticking those it is in,
+    // and New collection…), Tags… and Show in Finder (Explorer, the file
+    // manager); and what picking an item does.
+    juce::PopupMenu rowMenu(const SearchRow& row);
+    void rowMenuChosen(const SearchRow& row, int result);
+    enum RowMenuItem { kNewCollection = 1, kEditTags, kReveal, kFirstCollection = 100 };
+    static juce::String revealText();
+    // A sample's tags to change, as Tags… opens it.
+    std::unique_ptr<TagsPopover> tagsPopover(const SearchRow& row);
 
 private:
     enum Column { kFavourite = 1, kName, kType, kBpm, kKey, kLength, kRating, kTags };
@@ -122,6 +132,7 @@ private:
     std::optional<juce::String> nameRefusal(int index, const juce::String& name);
     void named(int index, const juce::String& name);
     void deleteEntryNow(int index);
+    void changeTag(std::int64_t fileId, const std::string& tag, bool added);
     std::vector<std::string> namesOf(EntryKind kind) const;
 
     AsmaProcessor& processor_;

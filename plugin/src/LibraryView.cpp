@@ -113,6 +113,24 @@ std::vector<Collection> LibraryView::collections()
     return guarded([&] { return UserData(*db_).collections(); }, std::vector<Collection>{});
 }
 
+std::vector<std::int64_t> LibraryView::collectionsOf(std::int64_t fileId)
+{
+    return guarded(
+        [&] {
+            auto q = db_->prepare("SELECT collection_id FROM collection_items WHERE file_id = ? ORDER BY collection_id");
+            q.bind(1, fileId);
+            std::vector<std::int64_t> ids;
+            while (q.step()) ids.push_back(q.getInt(0));
+            return ids;
+        },
+        std::vector<std::int64_t>{});
+}
+
+std::vector<std::pair<std::string, TagSource>> LibraryView::tagsOf(std::int64_t fileId)
+{
+    return guarded([&] { return Library(*db_).tags(fileId); }, std::vector<std::pair<std::string, TagSource>>{});
+}
+
 std::vector<SavedSearch> LibraryView::savedSearches()
 {
     return guarded([&] { return UserData(*db_).savedSearches(); }, std::vector<SavedSearch>{});

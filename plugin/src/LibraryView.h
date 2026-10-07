@@ -66,6 +66,10 @@ public:
     std::vector<Root> roots();
     std::vector<Collection> collections();
     std::vector<SavedSearch> savedSearches();
+    // The collections a file is in, by id; empty unless open.
+    std::vector<std::int64_t> collectionsOf(std::int64_t fileId);
+    // A file's tags and where each came from; empty unless open.
+    std::vector<std::pair<std::string, TagSource>> tagsOf(std::int64_t fileId);
     // What sounds like the file, from analysed sound profiles.
     SimilarResult similar(std::int64_t fileId, int limit = 10);
     // The tags searches can find, most used first; empty unless open.

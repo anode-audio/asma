@@ -267,3 +267,118 @@ TEST_CASE("Save search names the search in force and saves it", "[organise]")
     // The search in force is the saved one now: it is lit.
     CHECK(rig.editor->sidebar().row(entryNamed(rig, "Snares")).getToggleState());
 }
+
+namespace {
+
+// The submenu's items, as text with a tick where ticked.
+std::vector<std::string> collectionItems(const juce::PopupMenu& menu)
+{
+    std::vector<std::string> out;
+    for (juce::PopupMenu::MenuItemIterator it(menu); it.next();) {
+        const auto& item = it.getItem();
+        if (!item.subMenu) continue;
+        for (juce::PopupMenu::MenuItemIterator sub(*item.subMenu); sub.next();)
+            if (!sub.getItem().isSeparator)
+                out.push_back((sub.getItem().isTicked ? "+" : "") + sub.getItem().text.toStdString());
+    }
+    return out;
+}
+
+std::vector<std::string> topItems(const juce::PopupMenu& menu)
+{
+    std::vector<std::string> out;
+    for (juce::PopupMenu::MenuItemIterator it(menu); it.next();)
+        if (!it.getItem().isSeparator) out.push_back(it.getItem().text.toStdString());
+    return out;
+}
+
+int itemId(const juce::PopupMenu& menu, const std::string& text)
+{
+    for (juce::PopupMenu::MenuItemIterator it(menu, true); it.next();)
+        if (it.getItem().text.toStdString() == text) return it.getItem().itemID;
+    return 0;
+}
+
+} // namespace
+
+TEST_CASE("a row's menu ticks the collections it is in, and picking one adds or takes it out", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    {
+        Db db = Db::open(rig.f.dbPath);
+        UserData user(db);
+        user.addToCollection(user.createCollection("Live set"), Library(db).fileByAbsolutePath(rig.f.kick)->id);
+        user.createCollection("Album");
+    }
+    rig.editor->poll();
+    rig.type("kick");
+    const SearchRow kick = *rig.editor->shownRow(0);
+    const auto menu = rig.editor->rowMenu(kick);
+    CHECK(topItems(menu) == std::vector<std::string>{"Add to collection", "Tags\u2026",
+                                                      AsmaEditor::revealText().toStdString()});
+    CHECK(collectionItems(menu) == std::vector<std::string>{"Album", "+Live set", "New collection\u2026"});
+
+    rig.editor->rowMenuChosen(kick, itemId(menu, "Album"));
+    rig.editor->rowMenuChosen(kick, itemId(menu, "Live set"));
+    settle(rig);
+    CHECK(collectionsText(rig) == "Album=1;Live set=0;");
+    CHECK(collectionItems(rig.editor->rowMenu(kick)) == std::vector<std::string>{"+Album", "Live set", "New collection\u2026"});
+}
+
+TEST_CASE("New collection from a row's menu makes one with the sample in it", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    rig.type("kick");
+    const SearchRow kick = *rig.editor->shownRow(0);
+    rig.editor->rowMenuChosen(kick, AsmaEditor::kNewCollection);
+    REQUIRE(rig.editor->sidebar().isEditing());
+    name(rig.editor->sidebar(), "Kicks");
+    settle(rig);
+    CHECK(collectionsText(rig) == "Kicks=1;");
+    // The next new collection starts empty.
+    rig.editor->sidebar().startNewCollection();
+    name(rig.editor->sidebar(), "Empty");
+    settle(rig);
+    CHECK(collectionsText(rig) == "Empty=0;Kicks=1;");
+}
+
+TEST_CASE("Tags changes a sample's tags, shown in the table at once", "[organise]")
+{
+    EditorRig rig;
+    rig.p->writer().setCli(ASMA_CLI_PATH);
+    rig.type("kick");
+    const SearchRow kick = *rig.editor->shownRow(0);
+    const auto analysed = kick.tags; // the scanner's, from the file name
+    auto popover = rig.editor->tagsPopover(kick);
+    for (int i = 0; i < popover->chipCount(); ++i) CHECK_FALSE(popover->isRemovable(i));
+    popover->field().setText("Punchy", true);
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    popover->field().keyPressed(juce::KeyPress(juce::KeyPress::returnKey));
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    const auto shown = rig.editor->shownRow(0)->tags;
+    CHECK(std::find(shown.begin(), shown.end(), "punchy") != shown.end()); // before the helper has run
+    settle(rig);
+    {
+        Db db = Db::open(rig.f.dbPath);
+        const auto tags = Library(db).tags(kick.id);
+        CHECK(std::find(tags.begin(), tags.end(), std::pair<std::string, TagSource>{"punchy", TagSource::User}) != tags.end());
+    }
+    auto again = rig.editor->tagsPopover(*rig.editor->shownRow(0));
+    REQUIRE(again->chipCount() == static_cast<int>(analysed.size()) + 1);
+    CHECK(again->chipText(0) == "punchy");
+    CHECK(again->isRemovable(0));
+    again->removeButton(0)->triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    settle(rig);
+    CHECK(rig.editor->shownRow(0)->tags == analysed);
+}
+
+TEST_CASE("a right click on a row opens its menu, not a rating", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    rig.type("kick");
+    test::clickCell(rig.editor->table(), 0, kRating, xOfStar(4), juce::ModifierKeys::rightButtonModifier);
+    juce::PopupMenu::dismissAllActiveMenus();
+    settle(rig);
+    CHECK_FALSE(storedRating(rig, rig.f.kick));
+}

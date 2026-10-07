@@ -8,6 +8,7 @@
 #include "asma/core/Fs.h"
 #include "ui/Theme.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -397,10 +398,100 @@ std::unique_ptr<NamePopover> AsmaEditor::saveSearchPopover()
         });
 }
 
+juce::String AsmaEditor::revealText()
+{
+#if JUCE_MAC
+    return "Show in Finder";
+#elif JUCE_WINDOWS
+    return "Show in Explorer";
+#else
+    return "Show in the file manager";
+#endif
+}
+
+juce::PopupMenu AsmaEditor::rowMenu(const SearchRow& row)
+{
+    const auto in = library_.collectionsOf(row.id);
+    juce::PopupMenu collections;
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+        const auto& e = entries_[i];
+        if (e.kind != EntryKind::Collection) continue;
+        const bool ticked = std::find(in.begin(), in.end(), e.id) != in.end();
+        collections.addItem(kFirstCollection + static_cast<int>(i), utf8(e.name), true, ticked);
+    }
+    if (collections.getNumItems() > 0) collections.addSeparator();
+    collections.addItem(kNewCollection, juce::String::fromUTF8("New collection…"));
+    juce::PopupMenu menu;
+    menu.addSubMenu("Add to collection", collections);
+    menu.addItem(kEditTags, juce::String::fromUTF8("Tags…"));
+    menu.addSeparator();
+    menu.addItem(kReveal, revealText());
+    return menu;
+}
+
+void AsmaEditor::rowMenuChosen(const SearchRow& row, int result)
+{
+    if (result == kNewCollection) {
+        newCollectionFile_ = row.id; // the sidebar's name field makes it, with this sample in it
+        sidebar_.startNewCollection();
+    } else if (result == kEditTags) {
+        const int at = browser_.rowOf(LibraryView::pathOf(row));
+        const auto area = at >= 0 ? getLocalArea(&table_, table_.getRowPosition(at, true)) : table_.getBounds();
+        juce::CallOutBox::launchAsynchronously(tagsPopover(row), area, this);
+    } else if (result == kReveal) {
+        juce::File(utf8(toUtf8(LibraryView::pathOf(row)))).revealToUser();
+    } else if (result >= kFirstCollection) {
+        const auto index = static_cast<std::size_t>(result - kFirstCollection);
+        if (index >= entries_.size() || entries_[index].kind != EntryKind::Collection) return;
+        const auto in = library_.collectionsOf(row.id);
+        const auto& e = entries_[index];
+        if (std::find(in.begin(), in.end(), e.id) != in.end()) write(Write::removeFromCollection(e.name, row.id));
+        else write(Write::addToCollection(e.name, row.id));
+    }
+}
+
+std::unique_ptr<TagsPopover> AsmaEditor::tagsPopover(const SearchRow& row)
+{
+    std::vector<TagsPopover::Tag> tags;
+    for (const auto& [name, source] : library_.tagsOf(row.id)) tags.push_back({name, source == TagSource::User});
+    // The user's first, then the rest, each by name.
+    std::stable_sort(tags.begin(), tags.end(), [](const auto& a, const auto& b) {
+        return a.user != b.user ? a.user : a.name < b.name;
+    });
+    return std::make_unique<TagsPopover>(utf8(row.name), std::move(tags), library_.tagCounts(),
+                                         [this, id = row.id](const std::string& tag, bool added) {
+                                             changeTag(id, tag, added);
+                                         });
+}
+
+void AsmaEditor::changeTag(std::int64_t fileId, const std::string& tag, bool added)
+{
+    // The table's tags column shows the change at once.
+    std::vector<std::string> shown;
+    for (const auto& [name, source] : library_.tagsOf(fileId)) shown.push_back(name);
+    SearchRow probe;
+    probe.id = fileId;
+    probe.tags = shown;
+    shown = pending_.apply(probe).tags;
+    shown.erase(std::remove(shown.begin(), shown.end(), tag), shown.end());
+    if (added) shown.push_back(tag);
+    const auto ticket = pending_.setTags(fileId, shown);
+    write(added ? Write::addTag(fileId, tag) : Write::removeTag(fileId, tag), ticket);
+}
+
 void AsmaEditor::cellClicked(int row, int column, const juce::MouseEvent& event)
 {
     const auto shown = shownRow(row);
-    if (!shown || event.mods.isPopupMenu()) return;
+    if (!shown) return;
+    if (event.mods.isPopupMenu()) {
+        const auto area = getLocalArea(&table_, table_.getRowPosition(row, true));
+        rowMenu(*shown).showMenuAsync(
+            juce::PopupMenu::Options().withTargetScreenArea(localAreaToGlobal(area)).withParentComponent(this),
+            [safe = juce::Component::SafePointer<AsmaEditor>(this), r = *shown](int result) {
+                if (safe && result != 0) safe->rowMenuChosen(r, result);
+            });
+        return;
+    }
     if (column == kFavourite) toggleFavourite(*shown);
     if (column == kRating) {
         // The event is the row's: measure from the cell's left.
