@@ -198,8 +198,10 @@ waits for a scan to end; SQLite's busy timeout covers the moment a scan batch is
 committing. The plugin never writes inside the host: it runs the `asma` CLI
 (`asma rate`, `asma fav`, `asma tag`, `asma collection`, `asma search`,
 `asma retry`) as a short-lived helper process, and opens the library read-only
-itself. `asma retry` is the one of these that takes the writer lock: it re-reads
-and re-analyses the files it is given, as a scan would.
+itself. Every format ships the CLI beside its own binary as `asma-cli` (the
+app's and the bundles' binaries are themselves called `asma`). `asma retry` is
+the one of these that takes the writer lock: it re-reads and re-analyses the
+files it is given, as a scan would.
 
 ### File operations
 
@@ -560,9 +562,10 @@ core, the audio engine, the CLI and the scanner build without JUCE.
   the direct one.
 - **UI fidelity:** a headless test renders the editor at 1280×800 with fixed
   demo data and compares it with `tests/ui/reference/main.png` (the approved
-  design), failing above a set mismatch; the same test covers the filter
-  popover, the row menu, the Tags popover and the Problems panel against their
-  own reference pictures. It runs on macOS only, since font rendering differs
+  design), failing above a set mismatch; the same test covers the Key popover,
+  the Tags popover and the Problems panel against their own reference pictures.
+  The row menu is a native popup menu, which cannot be drawn headless: the
+  behaviour tests cover it. It runs on macOS only, since font rendering differs
   between systems; the behaviour tests run everywhere.
 - **Plugin validation:** pluginval at strictness 10 (VST3 everywhere, AU on
   macOS) and clap-validator (CLAP) in CI on all three platforms.

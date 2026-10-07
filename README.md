@@ -34,6 +34,7 @@ Ratings, favourites, tags, collections and saved searches:
     asma query --collection "Live set" --min-rating 4 --favourites
     asma search save "Fast loops" --type loop --bpm 140-180
     asma query --saved "Fast loops" --sort rating --desc
+    asma retry ~/Samples/Drums/broken.wav       # read a failed file again
 
 The library lives in the platform data directory (on macOS
 `~/Library/Application Support/Anode Labs/asma`); `--db PATH` or the
@@ -90,8 +91,17 @@ collection, or a saved search, which brings its whole search with it. The chips
 over the table narrow it further by type, BPM, key, instrument, length and
 rating; each opens a small panel, and its x clears it. The table holds every
 match, however many, sorts by clicking a column, and the Similar list beside the
-preview offers the samples that sound most like the selection. Rating, tagging
-and collecting come in a later release.
+preview offers the samples that sound most like the selection.
+
+Organising happens in place. Click a row's star to favourite it, or its rating
+stars to rate it (the rating it has clears it); with the table focused, F and 0
+to 5 do the same to the selection. Right-click a row to add it to a collection,
+change its tags or show it in Finder. The "+" beside COLLECTIONS makes one, a
+right-click renames or deletes a collection or a saved search, and "Save search"
+keeps the search in force. When files cannot be read or analysed, Problems
+appears in the sidebar: its panel lists each with the reason, and Retry reads it
+again. Changes show at once; in a plugin, which never writes the library inside
+the host, the `asma-cli` helper shipped beside it makes them.
 
 The look is checked against the approved design by `[fidelity]` in
 `asma_plugin_tests`, on macOS only; `tests/ui/reference/README.md` says how the
