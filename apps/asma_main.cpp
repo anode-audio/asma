@@ -28,7 +28,7 @@ using namespace asma::cli;
 namespace {
 
 constexpr const char* kUsageText =
-    "usage: asma [--db PATH] <command>\n"
+    "usage: asma [--db PATH] [--errors-to-stdout] <command>\n"
     "  root add <dir>          add a sample folder\n"
     "  root list               list sample folders\n"
     "  scan [--root ID] [--threads N] [--no-analysis]\n"
@@ -42,7 +42,9 @@ constexpr const char* kUsageText =
     "  tag add|remove <tag> <file>... | --id N...\n"
     "  collection list | create <name> | rename <name> <new> | delete <name>\n"
     "  collection add|remove <name> <file>... | --id N...\n"
-    "  search list | save <name> [query options] [words...] | delete <name>\n"
+    "  search list | save <name> [query options] [words...] | save <name> --json MODEL\n"
+    "  search rename <name> <new> | delete <name>\n"
+    "  retry <file>... | --id N...   read failed files again and re-analyse them\n"
     "  render <file> [--trim-start S] [--trim-end S] [--reverse | --ping-pong]\n"
     "         [--tempo BPM] [--key K] [--transpose N] [--rate HZ] [--renders DIR]\n"
     "                          print the file to drag, rendering edits if any\n"
@@ -273,8 +275,12 @@ int cmdQuery(Args& args, Db& db)
 int main(int argc, char** argv)
 {
     setupConsole();
+    // The app runs asma as a helper with stderr closed: it asks for errors on
+    // stdout, one line starting "error: ".
+    bool errorsToStdout = false;
     try {
         Args args = Args::fromMain(argc, argv);
+        errorsToStdout = args.flag("errors-to-stdout");
         if (args.flag("version")) {
             std::cout << "asma " << ASMA_VERSION << "\n";
             return kOk;
@@ -299,6 +305,10 @@ int main(int argc, char** argv)
             Db db = Db::open(dbPath);
             return cmdScan(args, db, dbPath);
         }
+        if (*command == "retry") {
+            Db db = Db::open(dbPath);
+            return cmdRetry(args, db, dbPath);
+        }
         for (const auto& [name, run] : commands) {
             if (*command != name) continue;
             Db db = Db::open(dbPath);
@@ -306,10 +316,12 @@ int main(int argc, char** argv)
         }
         throw UsageError("unknown command: " + *command);
     } catch (const UsageError& e) {
-        std::cerr << "asma: " << e.what() << "\n" << kUsageText;
+        if (errorsToStdout) std::cout << "error: " << e.what() << "\n";
+        else std::cerr << "asma: " << e.what() << "\n" << kUsageText;
         return kUsage;
     } catch (const std::exception& e) {
-        std::cerr << "asma: " << e.what() << "\n";
+        if (errorsToStdout) std::cout << "error: " << e.what() << "\n";
+        else std::cerr << "asma: " << e.what() << "\n";
         return kError;
     }
 }

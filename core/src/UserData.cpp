@@ -174,6 +174,19 @@ std::optional<SavedSearch> UserData::savedSearchByName(std::string_view name)
     return SavedSearch{q.getInt(0), q.getText(1), searchModelFromJson(q.getText(2)).value_or(SearchModel{})};
 }
 
+void UserData::renameSavedSearch(std::int64_t id, std::string_view name)
+{
+    auto exists = db_.prepare("SELECT 1 FROM saved_searches WHERE id = ?");
+    exists.bind(1, id);
+    if (!exists.step()) throw UserDataError("no saved search with id " + std::to_string(id));
+    const std::string valid = validName(name, "saved search");
+    if (const auto existing = savedSearchByName(valid); existing && existing->id != id)
+        throw UserDataError("a saved search called '" + valid + "' already exists");
+    auto q = db_.prepare("UPDATE saved_searches SET name = ? WHERE id = ?");
+    q.bind(1, std::string_view(valid)).bind(2, id);
+    q.run();
+}
+
 void UserData::deleteSavedSearch(std::int64_t id)
 {
     auto exists = db_.prepare("SELECT 1 FROM saved_searches WHERE id = ?");

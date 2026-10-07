@@ -4,14 +4,19 @@
 #include "CliCommon.h"
 #include "SearchArgs.h"
 
+#include "asma/core/Analyser.h"
 #include "asma/core/Fs.h"
 #include "asma/core/Library.h"
 #include "asma/core/Query.h"
+#include "asma/core/Scanner.h"
 #include "asma/core/UserData.h"
+#include "asma/core/WriterLock.h"
 
 #include <cstdint>
+#include <chrono>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace asma::cli {
@@ -160,6 +165,15 @@ int cmdSearch(Args& args, Db& db)
         if (args.rest().empty() || args.rest().front().rfind("--", 0) == 0)
             throw UsageError("search save needs the name before any option");
         const std::string name = required(args, "search name");
+        // --json: the whole model as the app holds it, which options cannot
+        // all say (the sort, a folder scope).
+        if (const auto json = args.option("json")) {
+            rejectLeftovers(args);
+            const auto model = searchModelFromJson(*json);
+            if (!model) throw UsageError("--json needs a search as JSON");
+            user.saveSearch(name, *model);
+            return kOk;
+        }
         const SearchModel model = modelFromArgs(args, db);
         user.saveSearch(name, model);
         return kOk;
@@ -172,7 +186,36 @@ int cmdSearch(Args& args, Db& db)
         user.deleteSavedSearch(saved->id);
         return kOk;
     }
-    throw UsageError("search needs list, save or delete");
+    if (sub == "rename") {
+        const std::string from = required(args, "search name");
+        const std::string to = required(args, "new name");
+        rejectLeftovers(args);
+        const auto saved = user.savedSearchByName(from);
+        if (!saved) throw UserDataError("no saved search called '" + from + "'");
+        user.renameSavedSearch(saved->id, to);
+        return kOk;
+    }
+    throw UsageError("search needs list, save, rename or delete");
+}
+
+int cmdRetry(Args& args, Db& db, const std::filesystem::path& dbPath)
+{
+    const auto idOptions = args.options("id");
+    const auto ids = targetFiles(args, db, idOptions);
+    auto lock = WriterLock::tryAcquire(dbPath.parent_path());
+    if (!lock) {
+        std::cout << "waiting for the scan" << std::endl;
+        while (!(lock = WriterLock::tryAcquire(dbPath.parent_path())))
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+    const RetryStats retried = retryFiles(db, ids);
+    AnalyseOptions analysis;
+    analysis.fileIds = retried.readable;
+    const AnalyseStats analysed = analysePending(db, analysis);
+    std::cout << "retried " << ids.size() << ": readable " << retried.readable.size() << ", failed "
+              << retried.failed << ", gone " << retried.gone << "; analysed " << analysed.analysed << ", failed "
+              << analysed.failed << "\n";
+    return kOk;
 }
 
 } // namespace asma::cli

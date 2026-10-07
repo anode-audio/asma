@@ -61,6 +61,8 @@ public:
     std::int64_t saveSearch(std::string_view name, const SearchModel& model);
     std::vector<SavedSearch> savedSearches(); // by name
     std::optional<SavedSearch> savedSearchByName(std::string_view name);
+    // Keeps the search; refuses a name another saved search has.
+    void renameSavedSearch(std::int64_t id, std::string_view name);
     void deleteSavedSearch(std::int64_t id);
 
 private:

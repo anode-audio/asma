@@ -299,6 +299,82 @@ TEST_CASE("collections and saved searches from the CLI", "[e2e]")
     CHECK(cli.runAsma("query").out.find("Bass_Loop") != std::string::npos); // files stay
 }
 
+TEST_CASE("search save takes the app's JSON, and saved searches rename", "[e2e]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
+
+#ifdef _WIN32
+    const std::string json = "\"{\"\"v\"\":1,\"\"sort\"\":\"\"bpm\"\",\"\"desc\"\":true}\"";
+#else
+    const std::string json = "'{\"v\":1,\"sort\":\"bpm\",\"desc\":true}'";
+#endif
+    CHECK(cli.runAsma("search save Fast --json " + json).exitCode == 0);
+    CHECK(cli.runAsma("search list").out.find("Fast\t{\"v\":1,\"sort\":\"bpm\",\"desc\":true}") != std::string::npos);
+    CHECK(cli.runAsma("search save Bad --json nope").exitCode == 2);
+    CHECK(cli.runAsma("search save Kicks kick").exitCode == 0);
+    CHECK(cli.runAsma("search rename Fast Faster").exitCode == 0);
+    CHECK(cli.runAsma("search list").out.find("Faster\t") != std::string::npos);
+    CHECK(cli.runAsma("search rename Faster kicks").exitCode == 1);
+    CHECK(cli.runAsma("search rename Nope Other").exitCode == 1);
+}
+
+TEST_CASE("asked to, asma says what went wrong on stdout", "[e2e]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
+    const RunResult r = cli.runAsma("--errors-to-stdout collection rename Nope Other");
+    CHECK(r.exitCode == 1);
+    CHECK(r.out == "error: no collection called 'Nope'\n");
+    const RunResult usage = cli.runAsma("--errors-to-stdout rate");
+    CHECK(usage.exitCode == 2);
+    CHECK(usage.out.rfind("error: missing rating", 0) == 0);
+}
+
+TEST_CASE("retry reads a fixed file again and analyses it", "[e2e][retry]")
+{
+    Cli cli;
+    asma::test::writeBytes(cli.lib / "Drums" / "broken.wav", "not audio");
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan").exitCode == 0);
+    const auto broken = quote(cli.lib / "Drums" / "broken.wav");
+    const RunResult still = cli.runAsma("retry " + broken);
+    CHECK(still.exitCode == 0);
+    CHECK(still.out == "retried 1: readable 0, failed 1, gone 0; analysed 0, failed 0\n");
+
+    asma::test::WavSpec spec;
+    spec.seed = 9;
+    asma::test::writeWav(cli.lib / "Drums" / "broken.wav", spec);
+    const RunResult fixed = cli.runAsma("retry " + broken);
+    CHECK(fixed.exitCode == 0);
+    CHECK(fixed.out == "retried 1: readable 1, failed 0, gone 0; analysed 1, failed 0\n");
+    CHECK(cli.runAsma("query broken").out.find("broken.wav") != std::string::npos);
+}
+
+TEST_CASE("retry waits while a scan holds the library", "[e2e][retry]")
+{
+    Cli cli;
+    asma::test::writeBytes(cli.lib / "Drums" / "broken.wav", "not audio");
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
+
+    auto lock = std::make_unique<std::optional<asma::WriterLock>>(asma::WriterLock::tryAcquire(cli.db.parent_path()));
+    REQUIRE(lock->has_value());
+    std::thread release([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        lock.reset();
+    });
+    const auto started = std::chrono::steady_clock::now();
+    const RunResult r = cli.runAsma("retry " + quote(cli.lib / "Drums" / "broken.wav"));
+    const auto waited = std::chrono::steady_clock::now() - started;
+    release.join();
+    CHECK(r.exitCode == 0);
+    CHECK(r.out.rfind("waiting for the scan\n", 0) == 0);
+    CHECK(waited >= std::chrono::milliseconds(500));
+}
+
 TEST_CASE("asma render prints the file to drag", "[e2e]")
 {
     Cli cli;

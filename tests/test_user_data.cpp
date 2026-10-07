@@ -205,3 +205,19 @@ TEST_CASE("user data follows a file moved to another root, whichever root is sca
     CHECK(user.rating(id) == 4);
     CHECK_FALSE(lib.fileByPath(rootB, "Kick.wav"));
 }
+
+TEST_CASE("saved searches rename, refusing a name another has", "[userdata]")
+{
+    Fixture f;
+    SearchModel loops;
+    loops.type = SampleType::Loop;
+    const auto a = f.user.saveSearch("Loops", loops);
+    const auto b = f.user.saveSearch("Kicks", {});
+    f.user.renameSavedSearch(a, "  Dark loops ");
+    CHECK(f.user.savedSearchByName("Dark loops")->model.type == SampleType::Loop);
+    CHECK_FALSE(f.user.savedSearchByName("Loops"));
+    f.user.renameSavedSearch(a, "DARK LOOPS"); // its own name, in other case
+    CHECK_THROWS_AS(f.user.renameSavedSearch(b, "dark loops"), UserDataError);
+    CHECK_THROWS_AS(f.user.renameSavedSearch(b, " "), UserDataError);
+    CHECK_THROWS_AS(f.user.renameSavedSearch(999, "x"), UserDataError);
+}
