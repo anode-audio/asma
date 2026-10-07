@@ -62,6 +62,7 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     sidebar_.nameRefusal = [this](int index, const juce::String& name) { return nameRefusal(index, name); };
     sidebar_.onNamed = [this](int index, const juce::String& name) { named(index, name); };
     sidebar_.onDelete = [this](int index) { deleteEntry(index); };
+    sidebar_.onNewCancelled = [this] { newCollectionFile_ = 0; };
     addAndMakeVisible(sidebar_);
     chips_.onChange = [this](const SearchModel& model) { applySearch(model); };
     similar_.onPick = [this](const SearchRow& row) { pickSimilar(row); };
@@ -417,12 +418,15 @@ juce::String AsmaEditor::revealText()
 juce::PopupMenu AsmaEditor::rowMenu(const SearchRow& row)
 {
     const auto in = library_.collectionsOf(row.id);
+    // The collections as the menu shows them: the choice comes after it
+    // closes, by when the library may have changed.
+    menuCollections_.clear();
     juce::PopupMenu collections;
-    for (std::size_t i = 0; i < entries_.size(); ++i) {
-        const auto& e = entries_[i];
+    for (const auto& e : entries_) {
         if (e.kind != EntryKind::Collection) continue;
         const bool ticked = std::find(in.begin(), in.end(), e.id) != in.end();
-        collections.addItem(kFirstCollection + static_cast<int>(i), utf8(e.name), true, ticked);
+        collections.addItem(kFirstCollection + static_cast<int>(menuCollections_.size()), utf8(e.name), true, ticked);
+        menuCollections_.push_back(e);
     }
     if (collections.getNumItems() > 0) collections.addSeparator();
     collections.addItem(kNewCollection, juce::String::fromUTF8("New collection…"));
@@ -437,8 +441,8 @@ juce::PopupMenu AsmaEditor::rowMenu(const SearchRow& row)
 void AsmaEditor::rowMenuChosen(const SearchRow& row, int result)
 {
     if (result == kNewCollection) {
-        newCollectionFile_ = row.id; // the sidebar's name field makes it, with this sample in it
-        sidebar_.startNewCollection();
+        sidebar_.startNewCollection(); // drops any field open before, and with it its sample
+        newCollectionFile_ = row.id;   // the field makes the collection with this sample in it
     } else if (result == kEditTags) {
         const int at = browser_.rowOf(LibraryView::pathOf(row));
         const auto area = at >= 0 ? getLocalArea(&table_, table_.getRowPosition(at, true)) : table_.getBounds();
@@ -447,9 +451,9 @@ void AsmaEditor::rowMenuChosen(const SearchRow& row, int result)
         juce::File(utf8(toUtf8(LibraryView::pathOf(row)))).revealToUser();
     } else if (result >= kFirstCollection) {
         const auto index = static_cast<std::size_t>(result - kFirstCollection);
-        if (index >= entries_.size() || entries_[index].kind != EntryKind::Collection) return;
+        if (index >= menuCollections_.size()) return;
         const auto in = library_.collectionsOf(row.id);
-        const auto& e = entries_[index];
+        const SidebarEntry e = menuCollections_[index];
         if (std::find(in.begin(), in.end(), e.id) != in.end()) write(Write::removeFromCollection(e.name, row.id));
         else write(Write::addToCollection(e.name, row.id));
     }

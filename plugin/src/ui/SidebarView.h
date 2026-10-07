@@ -35,6 +35,8 @@ public:
     std::function<std::optional<juce::String>(int index, const juce::String& name)> nameRefusal;
     std::function<void(int index, const juce::String& name)> onNamed;
     std::function<void(int index)> onDelete;
+    // A new collection's field was dropped (Escape, or another field opened).
+    std::function<void()> onNewCancelled;
 
     // The name field, for a new collection or in place of an entry.
     void startNewCollection();
@@ -47,6 +49,9 @@ public:
     // empty for the others.
     juce::PopupMenu entryMenu(int index) const;
     void entryMenuChosen(int index, int result);
+    // What the menu's choice does once it is made.
+    std::function<void(int result)> entryMenuHandler(int index);
+    juce::Label& refusalLabel() { return refusalLabel_; }
     enum MenuItem { kRename = 1, kDelete };
 
     int rowCount() const { return rows_.size(); }
@@ -61,6 +66,8 @@ public:
 
 private:
     void finishEditing(bool keep);
+    int indexOf(EntryKind kind, std::int64_t id) const; // -1 when not listed
+    void showRefusal(const juce::String& text);       // empty: none
 
     class Content;
     std::vector<SidebarEntry> entries_;
@@ -71,7 +78,11 @@ private:
     std::unique_ptr<juce::Button> add_;
     juce::TextEditor nameField_;
     std::optional<int> editing_; // -1: a new collection
+    // What the field renames, so it follows the entry as the list changes.
+    EntryKind editingKind_ = EntryKind::All;
+    std::int64_t editingId_ = 0;
     juce::String refusal_;
+    juce::Label refusalLabel_;
 };
 
 } // namespace asma::app

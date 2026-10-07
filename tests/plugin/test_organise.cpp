@@ -480,3 +480,38 @@ TEST_CASE("a retry of a file deleted meanwhile says it has gone", "[organise][pr
     REQUIRE(rig.editor->problems().rowCount() == 1);
     CHECK(rig.editor->problems().shownReason(0) == "The file is gone");
 }
+
+TEST_CASE("a row's menu adds to the collection it showed, though the list changed meanwhile", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    {
+        Db db = Db::open(rig.f.dbPath);
+        UserData(db).createCollection("Album");
+    }
+    rig.editor->poll();
+    rig.type("kick");
+    const SearchRow kick = *rig.editor->shownRow(0);
+    const auto menu = rig.editor->rowMenu(kick);
+    {
+        Db db = Db::open(rig.f.dbPath);
+        UserData(db).createCollection("Aardvark"); // sorts first, while the menu is open
+    }
+    rig.editor->poll();
+    rig.editor->rowMenuChosen(kick, itemId(menu, "Album"));
+    settle(rig);
+    CHECK(collectionsText(rig) == "Aardvark=0;Album=1;");
+}
+
+TEST_CASE("dropping New collection from a row's menu does not leave the sample for the next one", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    rig.type("kick");
+    rig.editor->rowMenuChosen(*rig.editor->shownRow(0), AsmaEditor::kNewCollection);
+    rig.editor->sidebar().nameField().keyPressed(juce::KeyPress(juce::KeyPress::escapeKey));
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    rig.editor->sidebar().addButton().triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    name(rig.editor->sidebar(), "Other");
+    settle(rig);
+    CHECK(collectionsText(rig) == "Other=0;");
+}

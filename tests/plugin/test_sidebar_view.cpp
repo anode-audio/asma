@@ -169,3 +169,81 @@ TEST_CASE("collections and saved searches have Rename and Delete; renaming edits
     settle(); // the field reports Return and Escape through the message loop
     CHECK(view.row(4).isVisible());
 }
+
+TEST_CASE("a rename survives the library changing under it, and follows its entry", "[sidebar][organise]")
+{
+    const juce::ScopedJuceInitialiser_GUI gui;
+    SidebarView view;
+    view.setBounds(0, 0, 220, 482);
+    view.setEntries(entries());
+    std::vector<std::pair<int, juce::String>> named;
+    view.onNamed = [&](int index, const juce::String& name) { named.emplace_back(index, name); };
+    view.startRename(4); // "Low end"
+    view.nameField().setText("Lowest", false);
+
+    auto changed = entries(); // a scan added a folder and changed the counts
+    changed.insert(changed.begin() + 4, {EntryKind::Folder, 9, "Loops", 40, {}});
+    changed[0].count = 600;
+    view.setEntries(changed);
+    REQUIRE(view.isEditing());
+    CHECK(view.nameField().getText() == "Lowest");
+    CHECK(view.nameField().getY() == view.row(5).getY() + 2);
+    view.nameField().keyPressed(juce::KeyPress(juce::KeyPress::returnKey));
+    settle();
+    CHECK(named == std::vector<std::pair<int, juce::String>>{{5, "Lowest"}});
+
+    view.startRename(5);
+    auto gone = entries();
+    gone.erase(gone.begin() + 4); // the collection was deleted elsewhere
+    view.setEntries(gone);
+    CHECK_FALSE(view.isEditing());
+}
+
+TEST_CASE("an entry's menu acts on that entry, wherever it has moved", "[sidebar][organise]")
+{
+    const juce::ScopedJuceInitialiser_GUI gui;
+    SidebarView view;
+    view.setBounds(0, 0, 220, 482);
+    view.setEntries(entries());
+    int deleted = -1;
+    view.onDelete = [&](int index) { deleted = index; };
+    const auto choose = view.entryMenuHandler(5); // "Short kicks", while its menu is open
+    auto changed = entries();
+    changed.insert(changed.begin() + 2, {EntryKind::Folder, 9, "Loops", 40, {}});
+    view.setEntries(changed);
+    choose(SidebarView::kDelete);
+    CHECK(deleted == 6);
+
+    deleted = -1;
+    const auto stale = view.entryMenuHandler(6);
+    view.setEntries(entries()); // still there, now at 5
+    stale(SidebarView::kDelete);
+    CHECK(deleted == 5);
+    deleted = -1;
+    const auto lost = view.entryMenuHandler(5);
+    view.setEntries({entries()[0], entries()[1]}); // gone
+    lost(SidebarView::kDelete);
+    CHECK(deleted == -1);
+}
+
+TEST_CASE("a refused name says why under the field", "[sidebar][organise]")
+{
+    const juce::ScopedJuceInitialiser_GUI gui;
+    SidebarView view;
+    view.setBounds(0, 0, 220, 482);
+    view.setEntries(entries());
+    view.nameRefusal = [](int, const juce::String&) -> std::optional<juce::String> {
+        return juce::String("A collection with that name exists.");
+    };
+    view.startNewCollection();
+    view.nameField().setText("Low end", false);
+    view.nameField().keyPressed(juce::KeyPress(juce::KeyPress::returnKey));
+    settle();
+    CHECK(view.refusalLabel().isVisible());
+    CHECK(view.refusalLabel().getText() == "A collection with that name exists.");
+    CHECK(view.refusalLabel().getY() >= view.nameField().getBottom());
+    CHECK(view.refusalLabel().getBottom() <= view.row(5).getY()); // the rows below make room
+    view.nameField().keyPressed(juce::KeyPress(juce::KeyPress::escapeKey));
+    settle();
+    CHECK_FALSE(view.refusalLabel().isVisible());
+}

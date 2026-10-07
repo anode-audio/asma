@@ -168,6 +168,7 @@ private:
     std::string selectedFolder_;
     PendingEdits pending_;
     std::int64_t newCollectionFile_ = 0; // the sample a new collection starts with (0: none)
+    std::vector<SidebarEntry> menuCollections_; // the collections the last row menu showed
     ProblemsView problems_;
     bool showingProblems_ = false;
     std::set<std::int64_t> retrying_; // files a retry runs for

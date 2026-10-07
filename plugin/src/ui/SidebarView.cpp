@@ -13,6 +13,7 @@ constexpr int kRowHeight = 30;
 constexpr int kHeadingHeight = 22;
 constexpr int kSectionGap = 18;
 constexpr int kTop = 14;
+constexpr int kRefusalHeight = 18; // why a name is refused, under the field
 
 const char* headingFor(EntryKind kind)
 {
@@ -149,12 +150,13 @@ SidebarView::SidebarView()
     nameField_.onReturnKey = [this] { finishEditing(true); };
     nameField_.onEscapeKey = [this] { finishEditing(false); };
     nameField_.onTextChange = [this] {
-        if (refusal_.isEmpty()) return;
-        refusal_.clear();
-        nameField_.setColour(juce::TextEditor::outlineColourId, theme::amber);
-        nameField_.setTooltip({});
+        if (refusal_.isNotEmpty()) showRefusal({});
     };
     content_->addChildComponent(nameField_);
+    refusalLabel_.setFont(theme::font(theme::Face::Text, 11.0f));
+    refusalLabel_.setColour(juce::Label::textColourId, theme::refusedText);
+    refusalLabel_.setBorderSize({0, 0, 0, 0});
+    content_->addChildComponent(refusalLabel_);
     viewport_.setViewedComponent(content_.get(), false);
     viewport_.setScrollBarsShown(true, false);
     addAndMakeVisible(viewport_);
@@ -169,8 +171,6 @@ SidebarView::~SidebarView() = default;
 void SidebarView::setEntries(std::vector<SidebarEntry> entries)
 {
     entries_ = std::move(entries);
-    // The entries moved under the field: what it was naming may be gone.
-    if (editing_ && *editing_ >= 0) finishEditing(false);
     rows_.clear();
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         const auto& e = entries_[i];
@@ -182,12 +182,35 @@ void SidebarView::setEntries(std::vector<SidebarEntry> entries)
             static_cast<Row*>(row)->onMenu = [this, i, row] {
                 entryMenu(static_cast<int>(i)).showMenuAsync(
                     juce::PopupMenu::Options().withTargetComponent(row).withParentComponent(getTopLevelComponent()),
-                    [safe = juce::Component::SafePointer<SidebarView>(this), i](int result) {
-                        if (safe) safe->entryMenuChosen(static_cast<int>(i), result);
+                    [safe = juce::Component::SafePointer<SidebarView>(this), choose = entryMenuHandler(static_cast<int>(i))](int result) {
+                        if (safe) choose(result);
                     });
             };
         content_->addAndMakeVisible(row);
     }
+    // The list changes under a rename whenever the library does: the field
+    // follows its entry, and goes only when the entry has.
+    if (editing_ && *editing_ >= 0) {
+        const int moved = indexOf(editingKind_, editingId_);
+        if (moved >= 0) editing_ = moved;
+        else finishEditing(false);
+    }
+    resized();
+}
+
+int SidebarView::indexOf(EntryKind kind, std::int64_t id) const
+{
+    for (std::size_t i = 0; i < entries_.size(); ++i)
+        if (entries_[i].kind == kind && entries_[i].id == id) return static_cast<int>(i);
+    return -1;
+}
+
+void SidebarView::showRefusal(const juce::String& text)
+{
+    refusal_ = text;
+    refusalLabel_.setText(text, juce::dontSendNotification);
+    refusalLabel_.setVisible(text.isNotEmpty());
+    nameField_.setColour(juce::TextEditor::outlineColourId, text.isNotEmpty() ? theme::refused : theme::amber);
     resized();
 }
 
@@ -223,10 +246,10 @@ juce::StringArray SidebarView::sectionTitles() const
 
 void SidebarView::startNewCollection()
 {
+    finishEditing(false); // one field at a time
     editing_ = -1;
     nameField_.setText({}, false);
-    refusal_.clear();
-    nameField_.setColour(juce::TextEditor::outlineColourId, theme::amber);
+    showRefusal({});
     nameField_.setVisible(true);
     resized();
     nameField_.grabKeyboardFocus();
@@ -235,11 +258,14 @@ void SidebarView::startNewCollection()
 void SidebarView::startRename(int index)
 {
     if (index < 0 || index >= static_cast<int>(entries_.size())) return;
+    finishEditing(false); // one field at a time
+    const auto& entry = entries_[static_cast<std::size_t>(index)];
     editing_ = index;
-    nameField_.setText(juce::String::fromUTF8(entries_[static_cast<std::size_t>(index)].name.c_str()), false);
+    editingKind_ = entry.kind;
+    editingId_ = entry.id;
+    nameField_.setText(juce::String::fromUTF8(entry.name.c_str()), false);
     nameField_.selectAll();
-    refusal_.clear();
-    nameField_.setColour(juce::TextEditor::outlineColourId, theme::amber);
+    showRefusal({});
     nameField_.setVisible(true);
     resized();
     nameField_.grabKeyboardFocus();
@@ -253,17 +279,15 @@ void SidebarView::finishEditing(bool keep)
     if (keep) {
         const auto refused = nameRefusal ? nameRefusal(index, name) : std::nullopt;
         if (refused) {
-            refusal_ = refused->isNotEmpty() ? *refused : juce::String("A name is needed.");
-            nameField_.setColour(juce::TextEditor::outlineColourId, theme::refused);
-            nameField_.setTooltip(refusal_);
+            showRefusal(refused->isNotEmpty() ? *refused : juce::String("A name is needed."));
             return; // the field stays for another try
         }
     }
     editing_.reset();
-    refusal_.clear();
     nameField_.setVisible(false);
-    resized();
+    showRefusal({});
     if (keep && onNamed) onNamed(index, name);
+    if (!keep && index < 0 && onNewCancelled) onNewCancelled();
 }
 
 juce::PopupMenu SidebarView::entryMenu(int index) const
@@ -281,6 +305,19 @@ void SidebarView::entryMenuChosen(int index, int result)
 {
     if (result == kRename) startRename(index);
     if (result == kDelete && onDelete) onDelete(index);
+}
+
+std::function<void(int)> SidebarView::entryMenuHandler(int index)
+{
+    if (index < 0 || index >= static_cast<int>(entries_.size())) return [](int) {};
+    // The choice comes after the menu closes, by when the list may have
+    // changed: it acts on the entry, wherever that is then.
+    const auto kind = entries_[static_cast<std::size_t>(index)].kind;
+    const auto id = entries_[static_cast<std::size_t>(index)].id;
+    return [this, kind, id](int result) {
+        const int now = indexOf(kind, id);
+        if (now >= 0) entryMenuChosen(now, result);
+    };
 }
 
 juce::String SidebarView::problemsText() const { return static_cast<const ProblemsButton*>(problems_.get())->count; }
@@ -319,6 +356,10 @@ void SidebarView::resized()
         if (editing_ == -1) {
             nameField_.setBounds(14, y + 2, width - 24, kRowHeight - 4);
             y += kRowHeight;
+            if (refusal_.isNotEmpty()) {
+                refusalLabel_.setBounds(14, y, width - 24, kRefusalHeight);
+                y += kRefusalHeight;
+            }
         }
     };
     for (std::size_t i = 0; i < entries_.size(); ++i) {
@@ -332,6 +373,10 @@ void SidebarView::resized()
         row->setVisible(!renaming);
         if (renaming) nameField_.setBounds(14, y + 2, width - 24, kRowHeight - 4);
         y += kRowHeight;
+        if (renaming && refusal_.isNotEmpty()) {
+            refusalLabel_.setBounds(14, y, width - 24, kRefusalHeight);
+            y += kRefusalHeight;
+        }
     }
     if (!entries_.empty()) endCollections();
     add_->setVisible(!entries_.empty());
