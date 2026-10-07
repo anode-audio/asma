@@ -196,8 +196,10 @@ User data (ratings, favourites, user tags, collections, saved searches) is
 written in short transactions without the writer lock, so rating a sample never
 waits for a scan to end; SQLite's busy timeout covers the moment a scan batch is
 committing. The plugin never writes inside the host: it runs the `asma` CLI
-(`asma rate`, `asma fav`, `asma tag`, `asma collection`, `asma search`) as a
-short-lived helper process, and opens the library read-only itself.
+(`asma rate`, `asma fav`, `asma tag`, `asma collection`, `asma search`,
+`asma retry`) as a short-lived helper process, and opens the library read-only
+itself. `asma retry` is the one of these that takes the writer lock: it re-reads
+and re-analyses the files it is given, as a scan would.
 
 ### File operations
 
@@ -302,17 +304,18 @@ favourites, tags, collections, saved searches, the Problems panel).
 The approved design (a design canvas, private to the author) is recorded in the
 repository as `tests/ui/reference/main.png`: its main artboard filled with the
 test's demo library. The editor is built to match it. The canvas also holds the
-filter chips' popovers (approved for 3c2b1).
+filter chips' popovers (approved for 3c2b1) and the organising actions and
+Problems panel (approved for 3c2b2).
 
 - **Left sidebar (3c2b1):** All samples, Favourites, folders (roots),
   collections and saved searches, with counts; a Problems entry with a count at
-  the foot while any file has failed to decode or analyse (its panel: 3c2b2).
+  the foot while any file has failed to decode or analyse.
 - **Top bar:** the asma mark, the search field with a result count, and on the
   right the tempo source: in the standalone the Link switch, the BPM box and
   "Add folder…"; in a plugin the host's tempo, read-only ("host 124.0 BPM").
 - **Chip row (3c2b1):** filter chips (type, BPM range, key, instrument, length,
-  rating) and "Clear all", between the top bar and the table; "Save search"
-  comes with 3c2b2.
+  rating) and "Clear all", between the top bar and the table, and "Save search"
+  (3c2b2) at its right end.
 - **Centre:** virtualised `TableListBox` (favourite, name, type, BPM, key,
   length, rating, tags); sortable, resizable, fully keyboard driven. Lengths
   under a minute read in seconds ("7.38 s"), longer ones as a clock ("5:01",
@@ -331,7 +334,7 @@ filter chips' popovers (approved for 3c2b1).
 - **File operations (plan 4):** context menu and batch dialogs, always with a
   preview; Ctrl/Cmd+Z undoes.
 - **Problems panel (3c2b2):** files that failed to decode or analyse, with the
-  reason and a retry action.
+  reason and a retry action, in place of the table.
 
 ### Browsing (3c2b1)
 
@@ -361,12 +364,65 @@ filter chips' popovers (approved for 3c2b1).
   top bar's count is not a cap. Clicking a header sorts by name, BPM, length,
   key or rating (type, tags and the favourite star do not sort); the sort is
   saved with the project. The favourite, rating and tags columns show what the
-  library holds; changing them is 3c2b2.
+  library holds; changing them is 3c2b2 (below).
 - **Similar** lists the 10 samples nearest the selection by sound, with the
   distance. Clicking one auditions it and makes it the selection: the table
   selects its row when the search shows it, and otherwise clears its selection
   while the preview shows the similar sample. A sample not analysed yet says
   "Not analysed yet"; a failed query says "No similar samples".
+
+### Organising (3c2b2)
+
+The canvas's "3c2b2: organise and Problems" artboard is the approved design for
+what follows.
+
+- **One way to write.** The editor writes through a `LibraryWriter`: rate,
+  favourite, add and remove a user tag, create, rename and delete a collection,
+  add to and remove from one, save and delete a search, and retry. The
+  standalone's writer writes the library directly (short transactions, no writer
+  lock); a plugin's runs the `asma` CLI beside it on a background thread, one
+  command at a time in the order issued, so the UI never waits on a process and
+  the last click wins.
+- **Shown at once, confirmed by the library.** A change shows in the UI as it is
+  made; the library's change notice then refetches and the stored value replaces
+  it. A write that fails (no CLI, the library busy past SQLite's timeout, a name
+  taken) rolls back at that refetch, and the footer says why: "Could not save
+  the rating: the library is busy".
+- **The table:** clicking a row's star favourites it; clicking its rating stars
+  sets the rating, and clicking the rating it has clears it. With the table
+  focused, `F` toggles the selection's favourite and `0` to `5` sets its rating;
+  typing in the search box is never caught.
+- **Right-clicking a row** acts on that row (one sample; several at once are not
+  in this plan):
+  - "Add to collection ▸" lists the collections, ticking those the sample is in;
+    picking a ticked one takes it out; "New collection…" makes one and adds the
+    sample.
+  - "Tags…" opens a popover: the user's tags as chips with a × that removes
+    them, the analyser's and the file's own greyed (they cannot be removed), and
+    a field that suggests the library's tags with their counts; Return adds one.
+    Tags are trimmed and compared ignoring case, so " Bass" adds nothing to a
+    sample tagged "bass".
+  - "Show in Finder" (Explorer on Windows, the file manager on Linux).
+- **The sidebar:** a "+" beside COLLECTIONS adds a name field in place; Return
+  keeps it, Escape drops it. Right-clicking a collection or a saved search gives
+  "Rename…" (in place, the same way) and "Delete". Deleting never touches
+  samples, and asks first only when the collection holds any. Deleting the entry
+  the sidebar has lit falls back to All samples.
+- **Save search** (the chip row's right end) opens a popover with a name field
+  and saves the search in force: scope, chips, text and sort.
+- **Names** of collections and saved searches are trimmed, may not be empty and
+  are unique within their kind. A taken name is refused inline, with Save or
+  Return doing nothing; renaming to the name it already has is no change, not a
+  refusal.
+- **Problems** takes the table's place until another sidebar entry is picked.
+  Each row gives the file, its folder, what went wrong and a "Retry" button;
+  "Retry all" sits in the header. Retrying runs `asma retry` (the app and the
+  plugin alike): it clears the files' failure and re-reads and re-analyses just
+  those files, under the writer lock, waiting while a scan holds it (the footer
+  says "Retrying after the scan"). A file that now works leaves the list; one
+  that fails again stays with its new reason; one that has gone says "The file
+  is gone". When the list empties, the panel says so and Problems leaves the
+  sidebar.
 
 ### Look
 
@@ -498,11 +554,16 @@ core, the audio engine, the CLI and the scanner build without JUCE.
   asserting results.
 - **Plugin tests:** the processor and editor run headless in a JUCE console app
   (MIDI timing, host transport, state, the browser, drag-out, scanning).
+- **Writers:** one set of tests runs against both `LibraryWriter`s, the CLI one
+  driving the built `asma` over a temporary library, and both must leave the
+  library the same. A plugin's processor gets the CLI writer, the standalone's
+  the direct one.
 - **UI fidelity:** a headless test renders the editor at 1280×800 with fixed
   demo data and compares it with `tests/ui/reference/main.png` (the approved
-  design, 3c2b areas blanked), failing above a set mismatch. It runs on macOS
-  only, since font rendering differs between systems; the behaviour tests run
-  everywhere.
+  design), failing above a set mismatch; the same test covers the filter
+  popover, the row menu, the Tags popover and the Problems panel against their
+  own reference pictures. It runs on macOS only, since font rendering differs
+  between systems; the behaviour tests run everywhere.
 - **Plugin validation:** pluginval at strictness 10 (VST3 everywhere, AU on
   macOS) and clap-validator (CLAP) in CI on all three platforms.
   clap-validator's `param-conversions` test is skipped: it divides by the
