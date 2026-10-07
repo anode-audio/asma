@@ -2,6 +2,7 @@
 #include "TestUtil.h"
 #include "asma/core/Fs.h"
 #include "asma/core/Library.h"
+#include "asma/core/UserData.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -325,4 +326,50 @@ TEST_CASE("an empty path is in no folder, and looking it up is not an error", "[
     std::optional<FileRecord> found;
     CHECK_NOTHROW(found = lib.fileByAbsolutePath({}));
     CHECK_FALSE(found);
+}
+
+TEST_CASE("user tags are trimmed and compared ignoring case", "[library][tags]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto id = lib.insertFile(sampleRecord(lib.addRoot(dir.path()), "a.wav"));
+    lib.addUserTag(id, "bass");
+    lib.addUserTag(id, " Bass\t");
+    REQUIRE(lib.tags(id).size() == 1);
+    CHECK(lib.tags(id)[0].first == "bass");
+    lib.removeUserTag(id, "  BASS ");
+    CHECK(lib.tags(id).empty());
+    CHECK_THROWS_AS(lib.addUserTag(id, "   "), UserDataError);
+    CHECK_THROWS_AS(lib.removeUserTag(id, ""), UserDataError);
+}
+
+TEST_CASE("problems lists failed files, then failed analyses, in enabled folders", "[library][problems]")
+{
+    TempDir dir;
+    Db db = Db::openInMemory();
+    Library lib(db);
+    const auto root = lib.addRoot(dir.path());
+    const auto ok = lib.insertFile(sampleRecord(root, "ok.wav", "01"));
+    const auto silent = lib.insertFile(sampleRecord(root, "b/silent.wav", "02"));
+    lib.setAnalysisError(silent, "the file is silent");
+    const auto broken = lib.insertFile(sampleRecord(root, "z/broken.wav", "03"));
+    lib.setStatus(broken, FileStatus::Failed, "not a valid WAV header");
+    const auto gone = lib.insertFile(sampleRecord(root, "gone.wav", "04"));
+    lib.setStatus(gone, FileStatus::Missing, "not a valid WAV header"); // missing is not a problem
+
+    const auto problems = lib.problems();
+    REQUIRE(problems.size() == 2);
+    CHECK(problems[0].id == broken);
+    CHECK(problems[0].kind == Problem::Kind::Read);
+    CHECK(problems[0].relPath == "z/broken.wav");
+    CHECK(problems[0].reason == "not a valid WAV header");
+    CHECK(problems[1].id == silent);
+    CHECK(problems[1].kind == Problem::Kind::Analysis);
+    CHECK(problems[1].reason == "the file is silent");
+    CHECK(problems[1].rootPath == lib.root(root)->path);
+    (void)ok;
+
+    db.exec("UPDATE roots SET enabled = 0");
+    CHECK(lib.problems().empty());
 }

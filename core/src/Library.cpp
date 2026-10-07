@@ -2,6 +2,7 @@
 #include "asma/core/Library.h"
 
 #include "asma/core/Fs.h"
+#include "asma/core/UserData.h"
 
 #include <cctype>
 
@@ -71,6 +72,16 @@ std::string lower(std::string_view s)
     std::string out(s);
     for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return out;
+}
+
+// A tag as stored: trimmed and lower case. Throws for one that is empty.
+std::string tagName(std::string_view tag)
+{
+    const auto isSpace = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
+    while (!tag.empty() && isSpace(tag.front())) tag.remove_prefix(1);
+    while (!tag.empty() && isSpace(tag.back())) tag.remove_suffix(1);
+    if (tag.empty()) throw UserDataError("a tag needs a name");
+    return lower(tag);
 }
 
 std::string baseName(std::string_view relPath)
@@ -426,14 +437,14 @@ void Library::addUserTag(std::int64_t fileId, std::string_view tag)
 {
     auto q = db_.prepare("INSERT INTO file_tags(file_id, tag_id, source) VALUES (?, ?, 'user') "
                          "ON CONFLICT(file_id, tag_id) DO UPDATE SET source = 'user'");
-    q.bind(1, fileId).bind(2, ensureTag(tag));
+    q.bind(1, fileId).bind(2, ensureTag(tagName(tag)));
     q.run();
     refreshFts(fileId);
 }
 
 void Library::removeUserTag(std::int64_t fileId, std::string_view tag)
 {
-    const std::string normalised = lower(tag);
+    const std::string normalised = tagName(tag);
     auto q = db_.prepare("DELETE FROM file_tags WHERE file_id = ? AND source = 'user' "
                          "AND tag_id = (SELECT id FROM tags WHERE name = ?)");
     q.bind(1, fileId).bind(2, std::string_view(normalised));
@@ -448,6 +459,26 @@ std::vector<std::pair<std::string, TagSource>> Library::tags(std::int64_t fileId
                          "WHERE ft.file_id = ? ORDER BY t.name");
     q.bind(1, fileId);
     while (q.step()) out.emplace_back(q.getText(0), sourceFromText(q.getText(1)));
+    return out;
+}
+
+std::vector<Problem> Library::problems()
+{
+    auto q = db_.prepare(
+        "SELECT f.id, r.path, f.rel_path, f.status, COALESCE(f.failure_reason, ''), COALESCE(f.analysis_error, '') "
+        "FROM files f JOIN roots r ON r.id = f.root_id WHERE r.enabled = 1 "
+        "AND (f.status = 'failed' OR (f.status = 'ok' AND f.analysis_error IS NOT NULL)) "
+        "ORDER BY f.status = 'ok', r.path, f.rel_path");
+    std::vector<Problem> out;
+    while (q.step()) {
+        Problem p;
+        p.id = q.getInt(0);
+        p.rootPath = q.getText(1);
+        p.relPath = q.getText(2);
+        p.kind = q.getText(3) == "failed" ? Problem::Kind::Read : Problem::Kind::Analysis;
+        p.reason = q.getText(p.kind == Problem::Kind::Read ? 4 : 5);
+        out.push_back(std::move(p));
+    }
     return out;
 }
 

@@ -43,6 +43,17 @@ struct FileRecord {
     std::string failureReason;
 };
 
+// A file in an enabled folder that could not be read, or read but not
+// analysed: what the Problems panel lists.
+struct Problem {
+    enum class Kind { Read, Analysis };
+    std::int64_t id = 0;
+    std::string rootPath; // UTF-8, '/' separators
+    std::string relPath;
+    Kind kind = Kind::Read;
+    std::string reason;
+};
+
 // Metadata derived from headers and file names; derived() also reports what
 // analysis filled in.
 struct DerivedInfo {
@@ -100,11 +111,16 @@ public:
     // Peak and LUFS from analysis; nullopt until the file has been analysed.
     std::optional<Loudness> loudness(std::int64_t fileId);
 
+    // Tags are trimmed and kept lower case, so " Bass" is the tag "bass".
+    // Throws UserDataError for a tag that is empty once trimmed.
     void addUserTag(std::int64_t fileId, std::string_view tag);
     // Removes the tag only where the user added it; auto and embedded tags
     // belong to the scanner and would come back on the next scan.
     void removeUserTag(std::int64_t fileId, std::string_view tag);
     std::vector<std::pair<std::string, TagSource>> tags(std::int64_t fileId);
+
+    // Failed files, then files whose analysis failed, each by path.
+    std::vector<Problem> problems();
 
 private:
     std::int64_t ensureTag(std::string_view name);
