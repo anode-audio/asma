@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The editor against the approved design: tests/ui/reference/main.png is the
-// design's main artboard filled with this file's demo library, the 3c2b
-// areas blanked (tests/ui/reference/main.html renders it; see README.md
-// there). Font rendering differs between systems, so this runs on macOS
+// design's main artboard filled with this file's demo library
+// (tests/ui/reference/main.html renders it; see README.md there), and the
+// popovers and the Problems panel against their own pictures. Font rendering differs between systems, so this runs on macOS
 // only; the behaviour tests run everywhere.
 #include "AsmaEditor.h"
 #include "PluginTestUtil.h"
 #include "ui/FilterPopovers.h"
+#include "ui/ProblemsView.h"
+#include "ui/TagsPopover.h"
 #include "ui/Theme.h"
 #include "Signals.h"
 #include "asma/core/Analyser.h"
@@ -287,4 +289,67 @@ TEST_CASE("the Key popover matches the approved design", "[fidelity]")
     INFO("key popover: " << share * 100.0 << "% of pixels differ");
     CHECK(share <= 0.035); // 1.4% when right
     popover.setLookAndFeel(nullptr);
+}
+
+namespace {
+
+// A component as it shows in the window, over `ground`, against its
+// reference picture; the share of pixels that differ.
+double againstReference(juce::Component& component, juce::Colour ground, const char* name)
+{
+    const int w = component.getWidth(), h = component.getHeight();
+    juce::Image current(juce::Image::ARGB, w, h, true, juce::SoftwareImageType{});
+    {
+        juce::Graphics g(current);
+        g.fillAll(ground);
+        component.paintEntireComponent(g, false);
+    }
+    writePng(current, outDir() / (std::string(name) + ".png"));
+    const juce::Image reference = juce::ImageFileFormat::loadFrom(
+        juce::File(juce::String(ASMA_TEST_UI) + "/reference/" + name + ".png"));
+    REQUIRE(reference.getWidth() == w);
+    REQUIRE(reference.getHeight() == h);
+    return mismatch(blurred(current), blurred(reference), w, {0, 0, w, h}, {}, nullptr);
+}
+
+} // namespace
+
+TEST_CASE("the Tags popover matches the approved design", "[fidelity]")
+{
+#if !JUCE_MAC
+    SKIP("font rendering differs off macOS; the reference was made there");
+#endif
+    const juce::ScopedJuceInitialiser_GUI gui;
+    app::AsmaLookAndFeel lnf;
+    app::TagsPopover popover("Bass_Loop_Am_120.wav", {{"dark", true}, {"live set", true}, {"bass", false}, {"synth", false}},
+                             {{"bass", 214}, {"gritty", 31}, {"synth", 96}, {"groove", 9}}, {});
+    popover.setLookAndFeel(&lnf);
+    popover.field().setText("gr", true);
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20); // the suggestions follow the field
+    REQUIRE(popover.suggestions() == juce::StringArray{"gritty", "groove"});
+    REQUIRE(popover.getWidth() == 360);
+    const double share = againstReference(popover, app::theme::panel, "tags-popover");
+    INFO("tags popover: " << share * 100.0 << "% of pixels differ");
+    CHECK(share <= 0.05); // 1.8% / 18.2% with no tags
+    popover.setLookAndFeel(nullptr);
+}
+
+TEST_CASE("the Problems panel matches the approved design", "[fidelity]")
+{
+#if !JUCE_MAC
+    SKIP("font rendering differs off macOS; the reference was made there");
+#endif
+    const juce::ScopedJuceInitialiser_GUI gui;
+    app::AsmaLookAndFeel lnf;
+    app::ProblemsView view;
+    view.setLookAndFeel(&lnf);
+    view.setBounds(0, 0, 840, 212);
+    view.setProblems({{1, "/Samples", "Drums/Kicks/kick_broken_header.wav", Problem::Kind::Read, "not a valid WAV header"},
+                      {2, "/Samples", "Pads/pad_long_take.flac", Problem::Kind::Read, "unexpected end of stream"},
+                      {3, "/Samples", "Vocals/Chops/vox_chop_07.mp3", Problem::Kind::Analysis, "the file is silent"}});
+    view.setRetrying({2}, false);
+    const double share = againstReference(view, app::theme::surface, "problems");
+    INFO("problems panel: " << share * 100.0 << "% of pixels differ");
+    CHECK(share <= 0.05); // 2.7% / 10.3% with no files
+    view.setLookAndFeel(nullptr);
 }

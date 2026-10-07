@@ -27,7 +27,7 @@ NamePopover::NamePopover(const juce::String& title, const juce::String& initial,
     addAndMakeVisible(field_);
     cancel_.onClick = [this] { close(); };
     addAndMakeVisible(cancel_);
-    save_.getProperties().set("asma.accent", true);
+    save_.getProperties().set("asma.primary", true);
     save_.onClick = [this] { save(); };
     addAndMakeVisible(save_);
     setSize(300, 150);

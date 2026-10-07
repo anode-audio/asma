@@ -29,7 +29,7 @@ TEST_CASE("the Problems panel lists each file with its folder and what went wron
     REQUIRE(view.rowCount() == 3);
     CHECK(view.countText() == "3 files");
     CHECK(view.nameText(0) == "kick_broken_header.wav");
-    CHECK(view.folderText(0) == "Samples/Drums/Kicks");
+    CHECK(view.folderText(0) == "Drums / Kicks");
     CHECK(view.folderText(1) == "Samples");
     CHECK(view.shownReason(0) == "Could not read the file: not a valid WAV header");
     CHECK(view.shownReason(1) == "The file is gone");

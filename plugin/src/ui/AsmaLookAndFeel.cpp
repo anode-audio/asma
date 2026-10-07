@@ -69,6 +69,13 @@ void AsmaLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& butt
     if (highlighted || down) fill = fill.isTransparent() ? theme::raised.withAlpha(0.6f) : fill.brighter(0.06f);
 
     auto r = button.getLocalBounds().toFloat();
+    if (props["asma.primary"]) { // the one action of a panel: amber, dimmed while it cannot act
+        const bool enabled = button.isEnabled();
+        g.setColour(enabled ? (highlighted || down ? theme::amber.brighter(0.06f) : theme::amber)
+                            : theme::amber.withAlpha(0.3f).overlaidWith(juce::Colours::transparentBlack));
+        g.fillRoundedRectangle(r, theme::kRadius);
+        return;
+    }
     if (segment.isEmpty()) {
         r = r.reduced(0.5f);
         g.setColour(fill);
@@ -96,12 +103,15 @@ void AsmaLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button
 {
     const auto& props = button.getProperties();
     const bool on = button.getToggleState();
-    const bool accent = on && props["asma.accent"];
+    const bool primary = props["asma.primary"];
+    const bool accent = (on && props["asma.accent"]) || primary;
     const bool quietText = !on && quiet(button);
     const float size = props.contains("asma.size") ? static_cast<float>(props["asma.size"]) : 13.0f;
     const bool mono = props["asma.mono"];
     g.setFont(theme::font(mono ? theme::Face::Mono : (accent ? theme::Face::SemiBold : theme::Face::Text), size));
-    g.setColour(accent ? theme::ground : (quietText ? theme::muted : theme::text));
+    juce::Colour colour = accent ? theme::ground : (quietText ? theme::muted : theme::text);
+    if (!button.isEnabled()) colour = primary ? theme::muted : theme::faint;
+    g.setColour(colour);
     g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(6, 0), juce::Justification::centred, 1);
 }
 

@@ -23,12 +23,13 @@ std::string baseName(const std::string& relPath)
     return slash == std::string::npos ? relPath : relPath.substr(slash + 1);
 }
 
-std::string folderOf(const Problem& p)
+// The folder as the preview's file line says it ("Drums / Kicks"); the
+// sample folder's own name for a file directly in it.
+juce::String folderOf(const Problem& p)
 {
     const auto slash = p.relPath.rfind('/');
-    const std::string root = baseName(p.rootPath);
-    if (slash == std::string::npos) return root;
-    return root + "/" + p.relPath.substr(0, slash);
+    if (slash == std::string::npos) return utf8(baseName(p.rootPath));
+    return utf8(p.relPath.substr(0, slash)).replace("/", " / ");
 }
 
 // The two columns' widths, from the area left of the button.
@@ -71,7 +72,7 @@ private:
 
 ProblemsView::ProblemsView() : rows_(std::make_unique<Rows>(*this))
 {
-    retryAll_.getProperties().set("asma.accent", true);
+    retryAll_.getProperties().set("asma.primary", true);
     retryAll_.onClick = [this] {
         std::vector<std::int64_t> ids;
         for (const auto& p : problems_)
@@ -95,7 +96,7 @@ juce::String ProblemsView::reasonText(const Problem& p)
 
 juce::String ProblemsView::nameText(int index) const { return utf8(baseName(problems_[static_cast<std::size_t>(index)].relPath)); }
 
-juce::String ProblemsView::folderText(int index) const { return utf8(folderOf(problems_[static_cast<std::size_t>(index)])); }
+juce::String ProblemsView::folderText(int index) const { return folderOf(problems_[static_cast<std::size_t>(index)]); }
 
 juce::String ProblemsView::shownReason(int index) const
 {

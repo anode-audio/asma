@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- The approved design's Problems panel (the canvas's organise artboard), at
+     840x212 with three files, the second retrying. See README.md beside it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>asma problems panel reference</title>
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../../plugin/fonts/Inter-Regular.ttf"); }
+@font-face { font-family: "Inter"; font-weight: 600; src: url("../../../plugin/fonts/Inter-SemiBold.ttf"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../../plugin/fonts/JetBrainsMono-Regular.ttf"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 600; src: url("../../../plugin/fonts/SpaceGrotesk-SemiBold.ttf"); }
+* { box-sizing: border-box; }
+body { margin: 0; background: #15171a; }
+.panel { width: 840px; height: 212px; background: #15171a; color: #e8e9eb; font-family: Inter; }
+.header { height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #2a2d33; }
+.header b { font-family: "Space Grotesk"; font-weight: 600; font-size: 14px; }
+.header .n { font-family: "JetBrains Mono"; font-size: 11px; color: #8a8f98; }
+.header .all { margin-left: auto; width: 84px; height: 28px; border-radius: 4px; background: #e8a33d; color: #0b0c0e;
+  font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.cols, .row { display: grid; grid-template-columns: 313px 409px; column-gap: 10px; padding: 0 14px; align-items: center; }
+.cols { height: 30px; border-bottom: 1px solid #2a2d33; font-family: "Space Grotesk"; font-weight: 600; font-size: 11px;
+  letter-spacing: 0.06em; color: #8a8f98; }
+.row { position: relative; height: 46px; border-bottom: 1px solid #1c1f23; }
+.file { display: flex; flex-direction: column; gap: 0; }
+.file b { font-weight: 400; font-size: 13px; height: 18px; line-height: 18px; }
+.file span { font-family: "JetBrains Mono"; font-size: 11px; color: #8a8f98; height: 14px; line-height: 14px; }
+.why { font-size: 12px; }
+.why.dim { color: #8a8f98; }
+.retry { position: absolute; right: 14px; top: 10px; width: 70px; height: 26px; border: 1px solid #2a2d33; border-radius: 4px;
+  background: #1c1f23; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.retry.off { color: #3a3e45; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="header"><b>Problems</b><span class="n">3 files</span><span class="all">Retry all</span></div>
+  <div class="cols"><span>FILE</span><span>WHAT WENT WRONG</span></div>
+  <div class="row"><div class="file"><b>kick_broken_header.wav</b><span>Drums / Kicks</span></div>
+    <span class="why">Could not read the file: not a valid WAV header</span><span class="retry">Retry</span></div>
+  <div class="row"><div class="file"><b>pad_long_take.flac</b><span>Pads</span></div>
+    <span class="why dim">Retrying&#8230;</span><span class="retry off">Retry</span></div>
+  <div class="row"><div class="file"><b>vox_chop_07.mp3</b><span>Vocals / Chops</span></div>
+    <span class="why">Analysis failed: the file is silent</span><span class="retry">Retry</span></div>
+</div>
+</body>
+</html>

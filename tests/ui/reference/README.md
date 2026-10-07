@@ -20,7 +20,15 @@ UI") rebuilt as `main.html`, with these changes and nothing else:
 artboard, rebuilt as `key-popover.html` at the size the app gives it (360×180),
 with C and Am picked.
 
-Both pictures are blurred before they are compared, so the test checks where
+`tags-popover.png` is the design's Tags popover from the canvas's organise
+artboard, rebuilt as `tags-popover.html` at the size the app gives it (360×216),
+"gr" typed. The field is drawn unfocused (the test cannot give it focus) and the
+hint is the app's one line.
+
+`problems.png` is the design's Problems panel from the same artboard, rebuilt as
+`problems.html` at 840×212 with three files, the second retrying.
+
+All the pictures are blurred before they are compared, so the test checks where
 text and shapes are rather than how each renderer draws their edges. Each area
 has its own limit, recorded in the test with the figures it measured. The test
 leaves out the waveform's own shape (the demo audio is not the design's) and the
@@ -38,6 +46,12 @@ Chrome at exactly 1280×800, scale 1:
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
   --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
   --window-size=360,180 --screenshot="$PWD/key-popover.png" "file://$PWD/key-popover.html"
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+  --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+  --window-size=360,216 --screenshot="$PWD/tags-popover.png" "file://$PWD/tags-popover.html"
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+  --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+  --window-size=840,212 --screenshot="$PWD/problems.png" "file://$PWD/problems.html"
 ```
 
 `main.html` loads the fonts from `plugin/fonts`, the same files the app embeds.

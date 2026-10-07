@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- The approved design's Tags popover (the canvas's organise artboard), at
+     the size the app gives it, "gr" typed. See README.md beside it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>asma tags popover reference</title>
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../../plugin/fonts/Inter-Regular.ttf"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; src: url("../../../plugin/fonts/JetBrainsMono-Regular.ttf"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 600; src: url("../../../plugin/fonts/SpaceGrotesk-SemiBold.ttf"); }
+* { box-sizing: border-box; }
+body { margin: 0; background: #111316; }
+.pop { position: relative; width: 360px; height: 216px; background: #111316; color: #e8e9eb; font-family: Inter; }
+.title { position: absolute; left: 14px; top: 14px; height: 22px; display: flex; align-items: center; gap: 6px; }
+.title b { font-family: "Space Grotesk"; font-weight: 600; font-size: 13px; }
+.title span { font-size: 11px; color: #8a8f98; }
+.chips { position: absolute; left: 14px; top: 42px; display: flex; gap: 6px; }
+.chip { height: 24px; padding: 0 9px; border: 1px solid #2a2d33; border-radius: 12px; color: #8a8f98; font-size: 11px;
+  display: inline-flex; align-items: center; }
+.chip.user { padding: 0 4px 0 9px; gap: 4px; border-color: #e8a33d; background: rgba(232,163,61,0.12); color: #f2bd6b; }
+.chip .x { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: #e8a33d; }
+.label { position: absolute; left: 14px; top: 78px; height: 14px; font-size: 11px; color: #8a8f98; display: flex; align-items: flex-end; }
+.field { position: absolute; left: 14px; top: 94px; width: 332px; height: 28px; padding: 0 8px; border: 1px solid #2a2d33;
+  border-radius: 4px; background: #0b0c0e; font-size: 13px; display: flex; align-items: center; }
+.list { position: absolute; left: 14px; top: 126px; width: 332px; padding: 3px; border: 1px solid #2a2d33; border-radius: 4px;
+  background: #1c1f23; }
+.opt { height: 24px; padding: 0 8px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.opt span { font-family: "JetBrains Mono"; font-size: 11px; color: #8a8f98; }
+.hint { position: absolute; left: 14px; top: 184px; height: 18px; font-size: 12px; color: #8a8f98; display: flex; align-items: center; }
+</style>
+</head>
+<body>
+<div class="pop">
+  <div class="title"><b>Tags</b><span>Bass_Loop_Am_120.wav</span></div>
+  <div class="chips">
+    <span class="chip user">dark<span class="x">&#215;</span></span>
+    <span class="chip user">live set<span class="x">&#215;</span></span>
+    <span class="chip">bass</span>
+    <span class="chip">synth</span>
+  </div>
+  <div class="label">Add a tag</div>
+  <div class="field">gr</div>
+  <div class="list">
+    <div class="opt">gritty<span>31</span></div>
+    <div class="opt">groove<span>9</span></div>
+  </div>
+  <div class="hint">Return adds the tag. Changes apply at once.</div>
+</div>
+</body>
+</html>
