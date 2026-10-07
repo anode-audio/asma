@@ -367,3 +367,57 @@ TEST_CASE("an unknown root id throws", "[scanner]")
     Db db = Db::openInMemory();
     CHECK_THROWS_AS(scanRoot(db, 42), std::invalid_argument);
 }
+
+TEST_CASE("retry reads a fixed file again and queues it for analysis", "[scanner][retry]")
+{
+    Fixture f;
+    test::writeBytes(f.root / "broken.wav", "not audio");
+    f.scan();
+    REQUIRE(f.file("broken.wav").status == FileStatus::Failed);
+
+    f.wav("broken.wav", 5); // fixed in place; a scan would only see it if size or mtime changed
+    const RetryStats r = retryFiles(f.db, {f.file("broken.wav").id});
+    CHECK(r.readable == std::vector<std::int64_t>{f.file("broken.wav").id});
+    CHECK(r.failed == 0);
+    CHECK(f.file("broken.wav").status == FileStatus::Ok);
+    CHECK(f.file("broken.wav").failureReason.empty());
+    CHECK_FALSE(f.file("broken.wav").contentHash.empty());
+}
+
+TEST_CASE("retry keeps a file that still fails, with the new reason", "[scanner][retry]")
+{
+    Fixture f;
+    test::writeBytes(f.root / "broken.wav", "not audio");
+    f.scan();
+    f.db.exec("UPDATE files SET failure_reason = 'an old reason'");
+
+    const RetryStats r = retryFiles(f.db, {f.file("broken.wav").id});
+    CHECK(r.readable.empty());
+    CHECK(r.failed == 1);
+    CHECK(f.file("broken.wav").status == FileStatus::Failed);
+    CHECK(f.file("broken.wav").failureReason != "an old reason");
+    CHECK_FALSE(f.file("broken.wav").failureReason.empty());
+}
+
+TEST_CASE("retry says a file that has gone is gone", "[scanner][retry]")
+{
+    Fixture f;
+    test::writeBytes(f.root / "broken.wav", "not audio");
+    f.scan();
+    fs::remove(f.root / "broken.wav");
+
+    const RetryStats r = retryFiles(f.db, {f.file("broken.wav").id});
+    CHECK(r.gone == 1);
+    CHECK(f.file("broken.wav").status == FileStatus::Failed);
+    CHECK(f.file("broken.wav").failureReason == "The file is gone");
+}
+
+TEST_CASE("retry refuses an unknown id and writes nothing", "[scanner][retry]")
+{
+    Fixture f;
+    test::writeBytes(f.root / "broken.wav", "not audio");
+    f.scan();
+    f.wav("broken.wav", 5);
+    CHECK_THROWS_AS(retryFiles(f.db, {f.file("broken.wav").id, 9999}), std::invalid_argument);
+    CHECK(f.file("broken.wav").status == FileStatus::Failed);
+}

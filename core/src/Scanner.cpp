@@ -322,6 +322,51 @@ ScanStats scanRoot(Db& db, std::int64_t rootId, const ScanOptions& options)
     return stats;
 }
 
+RetryStats retryFiles(Db& db, const std::vector<std::int64_t>& fileIds)
+{
+    Library lib(db);
+    struct Target {
+        FileRecord file;
+        fs::path root;
+    };
+    std::vector<Target> targets;
+    for (const auto id : fileIds) {
+        auto file = lib.fileById(id);
+        if (!file) throw std::invalid_argument("no file with id " + std::to_string(id));
+        const auto root = lib.root(file->rootId);
+        targets.push_back({std::move(*file), fromUtf8(root->path)});
+    }
+
+    RetryStats stats;
+    Transaction tx(db);
+    for (const auto& [file, root] : targets) {
+        const fs::path full = root / fromUtf8(file.relPath);
+        std::error_code ec;
+        const auto size = fs::file_size(full, ec);
+        const auto mtime = ec ? fs::file_time_type{} : fs::last_write_time(full, ec);
+        if (ec) {
+            lib.setStatus(file.id, FileStatus::Failed, "The file is gone");
+            ++stats.gone;
+            continue;
+        }
+        const Job job{JobKind::Changed, {file.relPath, static_cast<std::int64_t>(size), fileTimeToInt(mtime)}, file};
+        const JobResult r = process(root, job);
+        if (!r.probe) {
+            lib.setStatus(file.id, FileStatus::Failed, r.error);
+            ++stats.failed;
+            continue;
+        }
+        FileRecord rec = recordFrom(file.rootId, job.disk, r);
+        rec.id = file.id;
+        lib.updateFile(rec);
+        lib.resetAnalysis(rec.id);
+        lib.setDerived(rec.id, derive(r));
+        stats.readable.push_back(rec.id);
+    }
+    tx.commit();
+    return stats;
+}
+
 void markFailedPath(Db& db, std::int64_t rootId, std::string_view relPath, std::string_view reason)
 {
     Library lib(db);

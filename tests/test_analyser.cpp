@@ -182,3 +182,36 @@ TEST_CASE("renaming away a file-name BPM hands the file back to analysis", "[ana
     CHECK(d.bpmSource == FeatureSource::Analysis);
     CHECK(d.isLoop == true);
 }
+
+TEST_CASE("fileIds limits the run to those files, and none to nothing", "[analyser][retry]")
+{
+    Fixture f;
+    f.write("a.wav", test::kickHit(kRate));
+    f.write("b.wav", test::kickHit(kRate));
+    scanRoot(f.db, f.rootId);
+
+    AnalyseOptions none;
+    none.fileIds = std::vector<std::int64_t>{};
+    CHECK(analysePending(f.db, none).analysed == 0);
+
+    AnalyseOptions one;
+    one.fileIds = std::vector<std::int64_t>{f.file("b.wav").id};
+    CHECK(analysePending(f.db, one).analysed == 1);
+    CHECK(f.version("a.wav") == 0);
+    CHECK(f.version("b.wav") == kAnalysisVersion);
+}
+
+TEST_CASE("a retried file whose analysis failed is analysed again", "[analyser][retry]")
+{
+    Fixture f;
+    f.write("a.wav", test::kickHit(kRate));
+    scanRoot(f.db, f.rootId);
+    markAnalysisFailed(f.db, f.rootId, "a.wav", "crashed the analyser");
+
+    const RetryStats r = retryFiles(f.db, {f.file("a.wav").id});
+    REQUIRE(r.readable.size() == 1);
+    AnalyseOptions options;
+    options.fileIds = r.readable;
+    CHECK(analysePending(f.db, options).analysed == 1);
+    CHECK(f.lib.problems().empty());
+}

@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace asma {
 
@@ -21,6 +22,7 @@ struct AnalyseOptions {
     unsigned threads = 0;              // 0 = std::thread::hardware_concurrency()
     std::size_t batchSize = 50;        // files per write transaction
     std::optional<std::int64_t> rootId; // only this root; all enabled roots otherwise
+    std::optional<std::vector<std::int64_t>> fileIds; // only these files (a retry)
     double maxSeconds = 30.0;          // analyse at most this much of each file
     // Both callbacks may be called from worker threads; calls are serialised.
     std::function<void(std::string_view relPath)> onFileStart;

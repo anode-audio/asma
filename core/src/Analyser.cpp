@@ -31,11 +31,19 @@ struct Outcome {
     bool unreadable = false;
 };
 
-std::vector<Pending> pendingFiles(Db& db, const std::optional<std::int64_t>& rootId)
+std::vector<Pending> pendingFiles(Db& db, const AnalyseOptions& options)
 {
+    const auto& rootId = options.rootId;
     std::string sql = "SELECT f.id, r.path, f.rel_path FROM files f JOIN roots r ON r.id = f.root_id "
                       "WHERE f.status = 'ok' AND r.enabled = 1 AND f.analysis_version < ?";
     if (rootId) sql += " AND f.root_id = ?";
+    if (options.fileIds) {
+        if (options.fileIds->empty()) return {};
+        sql += " AND f.id IN (";
+        for (std::size_t i = 0; i < options.fileIds->size(); ++i)
+            sql += (i ? "," : "") + std::to_string((*options.fileIds)[i]);
+        sql += ")";
+    }
     sql += " ORDER BY f.id";
     auto q = db.prepare(sql);
     q.bind(1, kAnalysisVersion);
@@ -69,7 +77,7 @@ Outcome analyseOne(const Pending& file, double maxSeconds)
 
 AnalyseStats analysePending(Db& db, const AnalyseOptions& options)
 {
-    const std::vector<Pending> files = pendingFiles(db, options.rootId);
+    const std::vector<Pending> files = pendingFiles(db, options);
     const unsigned threads = detail::threadCount(options.threads);
     const std::size_t batchSize = std::max<std::size_t>(1, options.batchSize);
     Library lib(db);
