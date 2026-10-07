@@ -13,6 +13,7 @@
 #include "ui/Footer.h"
 #include "ui/NamePopover.h"
 #include "ui/PreviewPanel.h"
+#include "ui/ProblemsView.h"
 #include "ui/SidebarView.h"
 #include "ui/SimilarView.h"
 #include "ui/TagsPopover.h"
@@ -22,6 +23,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <set>
 
 namespace asma::app {
 
@@ -59,6 +61,10 @@ public:
     SidebarView& sidebar() { return sidebar_; }
     ChipRow& chipRow() { return chips_; }
     SimilarView& similar() { return similar_; }
+    ProblemsView& problems() { return problems_; }
+    // The Problems panel in the table's place, until a sidebar entry is picked.
+    void showProblems(bool show);
+    bool showingProblems() const { return showingProblems_; }
     // What a chip's popover needs: the library's tags and the tempo in force.
     PopoverContext popoverContext();
     // The standalone's tempo source and folders; hidden in a plugin.
@@ -133,6 +139,7 @@ private:
     void named(int index, const juce::String& name);
     void deleteEntryNow(int index);
     void changeTag(std::int64_t fileId, const std::string& tag, bool added);
+    void retry(std::vector<std::int64_t> ids);
     std::vector<std::string> namesOf(EntryKind kind) const;
 
     AsmaProcessor& processor_;
@@ -161,6 +168,10 @@ private:
     std::string selectedFolder_;
     PendingEdits pending_;
     std::int64_t newCollectionFile_ = 0; // the sample a new collection starts with (0: none)
+    ProblemsView problems_;
+    bool showingProblems_ = false;
+    std::set<std::int64_t> retrying_; // files a retry runs for
+    bool retryWaiting_ = false;       // a retry waits for a scan
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AsmaEditor)
 };

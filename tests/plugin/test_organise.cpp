@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "EditorRig.h"
 #include "asma/core/Fs.h"
+#include "asma/core/Scanner.h"
 #include "asma/core/UserData.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -381,4 +382,101 @@ TEST_CASE("a right click on a row opens its menu, not a rating", "[organise]")
     juce::PopupMenu::dismissAllActiveMenus();
     settle(rig);
     CHECK_FALSE(storedRating(rig, rig.f.kick));
+}
+
+namespace {
+
+// A library whose kick could not be read; the helper retries it.
+struct ProblemRig : EditorRig {
+    fs::path broken = f.lib / "Drums" / "Kick_01.wav";
+    ProblemRig() : EditorRig(AsmaProcessor::Mode::Standalone)
+    {
+        test::writeBytes(broken, "not audio");
+        touchLater();
+        {
+            Db db = Db::open(f.dbPath);
+            scanRoot(db, Library(db).roots().front().id);
+        }
+        p->writer().setCli(ASMA_CLI_PATH);
+        editor->poll();
+    }
+    void touchLater()
+    {
+        fs::last_write_time(broken, fs::last_write_time(broken) + std::chrono::seconds(5));
+    }
+    void waitForRetries()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (!p->writer().idle() && std::chrono::steady_clock::now() < deadline)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+        editor->poll();
+    }
+};
+
+} // namespace
+
+TEST_CASE("Problems takes the table's place until another sidebar entry is picked", "[organise][problems]")
+{
+    ProblemRig rig;
+    auto& problems = rig.editor->sidebar().problemsButton();
+    REQUIRE(problems.isVisible());
+    problems.triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK(rig.editor->showingProblems());
+    CHECK(rig.editor->problems().isVisible());
+    CHECK_FALSE(rig.editor->table().isVisible());
+    CHECK_FALSE(rig.editor->chipRow().isVisible());
+    CHECK(problems.getToggleState());
+    REQUIRE(rig.editor->problems().rowCount() == 1);
+    CHECK(rig.editor->problems().nameText(0) == "Kick_01.wav");
+
+    rig.editor->sidebar().row(0).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    CHECK_FALSE(rig.editor->showingProblems());
+    CHECK(rig.editor->table().isVisible());
+}
+
+TEST_CASE("a retried file that still fails stays, with the new reason", "[organise][problems]")
+{
+    ProblemRig rig;
+    rig.editor->showProblems(true);
+    {
+        Db db = Db::open(rig.f.dbPath);
+        db.exec("UPDATE files SET failure_reason = 'an old reason' WHERE status = 'failed'");
+    }
+    rig.editor->poll();
+    REQUIRE(rig.editor->problems().shownReason(0) == "Could not read the file: an old reason");
+    rig.editor->problems().retryButton(0).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    rig.waitForRetries();
+    REQUIRE(rig.editor->problems().rowCount() == 1);
+    CHECK(rig.editor->problems().shownReason(0) != "Could not read the file: an old reason");
+    CHECK(rig.editor->problems().retryButton(0).isEnabled());
+}
+
+TEST_CASE("a fixed file leaves the list, and Problems leaves the sidebar", "[organise][problems]")
+{
+    ProblemRig rig;
+    rig.editor->showProblems(true);
+    test::writeWavFloat(rig.broken, 48000, {test::kickHit(48000)}); // fixed in place
+    rig.editor->problems().retryAllButton().triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    rig.waitForRetries();
+    CHECK(rig.editor->problems().rowCount() == 0);
+    CHECK(rig.editor->problems().message() == "Nothing has failed.");
+    CHECK(rig.editor->showingProblems()); // until another entry is picked
+    CHECK_FALSE(rig.editor->sidebar().problemsButton().isVisible());
+}
+
+TEST_CASE("a retry of a file deleted meanwhile says it has gone", "[organise][problems]")
+{
+    ProblemRig rig;
+    rig.editor->showProblems(true);
+    fs::remove(rig.broken);
+    rig.editor->problems().retryButton(0).triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    rig.waitForRetries();
+    REQUIRE(rig.editor->problems().rowCount() == 1);
+    CHECK(rig.editor->problems().shownReason(0) == "The file is gone");
 }

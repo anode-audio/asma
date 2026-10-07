@@ -176,6 +176,11 @@ std::int64_t LibraryView::problemCount()
         std::int64_t{0});
 }
 
+std::vector<Problem> LibraryView::problems()
+{
+    return guarded([&] { return Library(*db_).problems(); }, std::vector<Problem>{});
+}
+
 std::int64_t LibraryView::sampleCount()
 {
     return guarded(

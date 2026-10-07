@@ -52,9 +52,13 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     top_.searchBox().onTextChange = [this] { searchChanged(); };
     addAndMakeVisible(top_);
     sidebar_.onPick = [this](int index) {
+        showProblems(false);
         if (index >= 0 && index < static_cast<int>(entries_.size()))
             applySearch(withEntry(entries_[static_cast<std::size_t>(index)], browser_.searchModel()));
     };
+    sidebar_.onProblems = [this] { showProblems(true); };
+    problems_.onRetry = [this](std::vector<std::int64_t> ids) { retry(std::move(ids)); };
+    addChildComponent(problems_);
     sidebar_.nameRefusal = [this](int index, const juce::String& name) { return nameRefusal(index, name); };
     sidebar_.onNamed = [this](int index, const juce::String& name) { named(index, name); };
     sidebar_.onDelete = [this](int index) { deleteEntry(index); };
@@ -232,6 +236,7 @@ void AsmaEditor::resized()
     similar_.setBounds(bottom.removeFromRight(theme::kSimilarWidth).withTrimmedLeft(1));
     preview_.setBounds(bottom);
     sidebar_.setBounds(area.removeFromLeft(theme::kSidebarWidth));
+    problems_.setBounds(area);
     chips_.setBounds(area.removeFromTop(theme::kChipRowHeight));
     table_.setBounds(area);
     empty_.setBounds(area.withSizeKeepingCentre(std::min(area.getWidth(), 520), 60).translated(0, -20));
@@ -479,6 +484,39 @@ void AsmaEditor::changeTag(std::int64_t fileId, const std::string& tag, bool add
     write(added ? Write::addTag(fileId, tag) : Write::removeTag(fileId, tag), ticket);
 }
 
+void AsmaEditor::showProblems(bool show)
+{
+    showingProblems_ = show;
+    if (show) problems_.setProblems(library_.problems());
+    problems_.setVisible(show);
+    chips_.setVisible(!show);
+    table_.setVisible(!show);
+    sidebar_.setProblemsLit(show);
+    updateReadouts();
+}
+
+void AsmaEditor::retry(std::vector<std::int64_t> ids)
+{
+    retrying_.insert(ids.begin(), ids.end());
+    problems_.setRetrying(retrying_, retryWaiting_);
+    processor_.writer().retry(ids, [safe = juce::Component::SafePointer<AsmaEditor>(this), ids](const RetryEvent& e) {
+        if (!safe) return;
+        if (e.kind == RetryEvent::Kind::Waiting) {
+            safe->retryWaiting_ = true;
+            safe->scanMessage_ = "Retrying after the scan";
+        } else {
+            for (const auto id : ids) safe->retrying_.erase(id);
+            if (safe->retrying_.empty()) safe->retryWaiting_ = false;
+            safe->scanMessage_ = e.kind == RetryEvent::Kind::Failed ? "Could not retry: " + utf8(e.error) : juce::String();
+            // Whatever the library now says about those files.
+            safe->problems_.setProblems(safe->library_.problems());
+            safe->refreshSidebar();
+        }
+        safe->problems_.setRetrying(safe->retrying_, safe->retryWaiting_);
+        safe->updateReadouts();
+    });
+}
+
 void AsmaEditor::cellClicked(int row, int column, const juce::MouseEvent& event)
 {
     const auto shown = shownRow(row);
@@ -573,6 +611,7 @@ void AsmaEditor::poll()
         similarFor_ = 0; // the library changed: analysis may have reached the selection
         showSelection();
         refreshSidebar();
+        if (showingProblems_) problems_.setProblems(library_.problems());
     }
     updateReadouts();
 }
@@ -695,12 +734,13 @@ void AsmaEditor::updateReadouts()
         // text, chips or scope) matches nothing.
         empty = browser_.total() == 0 ? (standalone ? "The library is empty. Add a folder of samples." : "The library is empty.")
                                       : "No samples match.";
+    if (showingProblems_) empty.clear(); // the panel says its own
     if (empty != empty_.getText()) empty_.setText(empty, juce::dontSendNotification);
     empty_.setVisible(empty.isNotEmpty());
     // "Add folder" where there is nothing yet, not where a search found nothing.
     const bool nothing = library_.state() == LibraryState::Missing
                       || (library_.state() == LibraryState::Open && browser_.total() == 0);
-    emptyAddFolder_.setVisible(standalone && nothing);
+    emptyAddFolder_.setVisible(standalone && nothing && !showingProblems_);
 
     // The preview.
     if (selected_) {

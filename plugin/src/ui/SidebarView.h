@@ -26,6 +26,8 @@ public:
     // The lit entry; -1 for none.
     void setSelected(int index);
     void setProblems(std::int64_t count);
+    // Problems is lit while its panel shows.
+    void setProblemsLit(bool lit);
 
     std::function<void(int)> onPick;
     std::function<void()> onProblems;

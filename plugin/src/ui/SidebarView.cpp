@@ -81,11 +81,11 @@ public:
     void paintButton(juce::Graphics& g, bool highlighted, bool down) override
     {
         const auto r = getLocalBounds().toFloat().reduced(0.5f);
-        if (highlighted || down) {
+        if (highlighted || down || getToggleState()) {
             g.setColour(theme::raised);
             g.fillRoundedRectangle(r, theme::kRadius);
         }
-        g.setColour(theme::border);
+        g.setColour(getToggleState() ? theme::amber : theme::border);
         g.drawRoundedRectangle(r, theme::kRadius, 1.0f);
         auto area = getLocalBounds().reduced(10, 0);
         g.setFont(theme::font(theme::Face::Text, 13.0f));
@@ -206,6 +206,8 @@ void SidebarView::setProblems(std::int64_t count)
     resized();
     repaint();
 }
+
+void SidebarView::setProblemsLit(bool lit) { problems_->setToggleState(lit, juce::dontSendNotification); }
 
 juce::String SidebarView::countText(int index) const
 {

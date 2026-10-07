@@ -77,6 +77,8 @@ public:
     // Files in enabled folders that failed to decode or analyse: the
     // Problems entry's count. 0 unless open.
     std::int64_t problemCount();
+    // Those files, read failures first, each with why; empty unless open.
+    std::vector<Problem> problems();
     // Every sample a search could find: readable files in enabled folders. 0 unless open.
     std::int64_t sampleCount();
     // What the model matches, past the page search() returns. 0 unless open.
