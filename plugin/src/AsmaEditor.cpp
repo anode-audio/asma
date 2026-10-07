@@ -34,6 +34,9 @@ std::optional<SortField> sortFor(int column)
 
 juce::String utf8(const std::string& s) { return juce::String::fromUTF8(s.c_str()); }
 
+// The rating column's stars, lit and faint alike.
+juce::Font starFont() { return theme::font(theme::Face::Text, 11.0f).withExtraKerningFactor(0.15f); }
+
 } // namespace
 
 AsmaEditor::AsmaEditor(AsmaProcessor& owner)
@@ -238,7 +241,76 @@ bool AsmaEditor::keyPressed(const juce::KeyPress& key)
         else processor_.engine().play();
         return true;
     }
+    // F and 0 to 5 organise the selection. A text field keeps what is typed
+    // in it; this is for keys that reach the window from anywhere else.
+    const int c = key.getTextCharacter() != 0 ? static_cast<int>(key.getTextCharacter()) : key.getKeyCode();
+    const bool typing = dynamic_cast<juce::TextEditor*>(juce::Component::getCurrentlyFocusedComponent()) != nullptr;
+    if (!typing && selected_ && !key.getModifiers().isCommandDown() && !key.getModifiers().isCtrlDown()) {
+        const auto row = pending_.apply(*selected_);
+        if (c == 'f' || c == 'F') {
+            toggleFavourite(row);
+            return true;
+        }
+        if (c >= '0' && c <= '5') {
+            const int stars = static_cast<int>(c - '0');
+            if (stars != row.rating.value_or(0)) rate(row, stars);
+            return true;
+        }
+    }
     return false;
+}
+
+int AsmaEditor::starAt(int x)
+{
+    const float advance =
+        juce::GlyphArrangement::getStringWidth(starFont(), juce::String::fromUTF8("\u2605\u2605\u2605\u2605\u2605")) / 5.0f;
+    if (x < 0 || advance <= 0.0f) return 0;
+    const int star = static_cast<int>(static_cast<float>(x) / advance) + 1;
+    return star <= 5 ? star : 0;
+}
+
+std::optional<SearchRow> AsmaEditor::shownRow(int row)
+{
+    const SearchRow* found = browser_.row(row);
+    if (!found) return std::nullopt;
+    return pending_.apply(*found);
+}
+
+void AsmaEditor::toggleFavourite(const SearchRow& row)
+{
+    const bool on = !pending_.apply(row).favourite;
+    write(Write::favourite(row.id, on), pending_.setFavourite(row.id, on));
+}
+
+void AsmaEditor::rate(const SearchRow& row, int stars)
+{
+    const int rating = pending_.apply(row).rating == stars ? 0 : stars;
+    write(Write::rate(row.id, rating), pending_.setRating(row.id, rating));
+}
+
+void AsmaEditor::write(const Write& w, std::uint64_t ticket)
+{
+    table_.repaint();
+    processor_.writer().write(w, [safe = juce::Component::SafePointer<AsmaEditor>(this), w, ticket](const std::string& error) {
+        if (!safe) return;
+        safe->pending_.finished(ticket, error.empty());
+        if (!error.empty()) safe->scanMessage_ = utf8(failureText(w, error));
+        safe->table_.repaint();
+        safe->updateReadouts();
+    });
+}
+
+void AsmaEditor::cellClicked(int row, int column, const juce::MouseEvent& event)
+{
+    const auto shown = shownRow(row);
+    if (!shown || event.mods.isPopupMenu()) return;
+    if (column == kFavourite) toggleFavourite(*shown);
+    if (column == kRating) {
+        // The event is the row's: measure from the cell's left.
+        auto& header = table_.getHeader();
+        const int left = header.getColumnPosition(header.getIndexOfColumnId(kRating, true)).getX();
+        if (const int star = starAt(event.x - left)) rate(*shown, star);
+    }
 }
 
 void AsmaEditor::chooseFolder()
@@ -308,6 +380,7 @@ void AsmaEditor::poll()
             }
         }
     if (browser_.poll()) {
+        pending_.libraryChanged();
         table_.updateContent();
         similarFor_ = 0; // the library changed: analysis may have reached the selection
         showSelection();
@@ -493,9 +566,9 @@ void AsmaEditor::paintRowBackground(juce::Graphics& g, int, int width, int heigh
 void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, int height, bool)
 {
     if (row < 0 || row >= getNumRows()) return;
-    const SearchRow* found = browser_.row(row);
-    if (!found) return;
-    const SearchRow& r = *found;
+    const auto shown = shownRow(row);
+    if (!shown) return;
+    const SearchRow& r = *shown;
     juce::String text;
     juce::Font font = theme::font(theme::Face::Mono, 12.0f);
     juce::Colour colour = theme::text;
@@ -510,7 +583,7 @@ void AsmaEditor::paintCell(juce::Graphics& g, int row, int column, int width, in
     case kRating: {
         // Lit stars for the rating, faint ones for the rest.
         const int lit = r.rating.value_or(0);
-        g.setFont(theme::font(theme::Face::Text, 11.0f).withExtraKerningFactor(0.15f));
+        g.setFont(starFont());
         juce::String on, off;
         for (int i = 0; i < 5; ++i) (i < lit ? on : off) << juce::String::fromUTF8("\u2605");
         const int onWidth = static_cast<int>(std::ceil(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), on)));

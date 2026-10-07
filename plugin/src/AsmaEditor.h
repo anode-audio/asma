@@ -3,6 +3,8 @@
 
 #include "Browser.h"
 #include "LibraryView.h"
+#include "LibraryWriter.h"
+#include "PendingEdits.h"
 #include "Sidebar.h"
 #include "ui/AsmaLookAndFeel.h"
 #include "ui/ChipRow.h"
@@ -68,6 +70,16 @@ public:
     // Deletes every kept render; the footer's button asks first.
     void clearRenders();
 
+    // Organising: the table shows each change at once and the library
+    // confirms it; a write that fails rolls back and the footer says why.
+    void toggleFavourite(const SearchRow& row);
+    void rate(const SearchRow& row, int stars); // the rating it has clears it
+    // The table's row as shown, pending edits included; null out of range.
+    std::optional<SearchRow> shownRow(int row);
+    // Which star of the rating column an x (from the cell's left) falls on,
+    // 1 to 5; 0 past the fifth.
+    static int starAt(int x);
+
 private:
     enum Column { kFavourite = 1, kName, kType, kBpm, kKey, kLength, kRating, kTags };
     // TableListBoxModel
@@ -77,6 +89,7 @@ private:
     void selectedRowsChanged(int lastRowSelected) override;
     void sortOrderChanged(int newSortColumnId, bool isForwards) override;
     void returnKeyPressed(int lastRowSelected) override;
+    void cellClicked(int row, int column, const juce::MouseEvent& event) override;
     juce::var getDragSourceDescription(const juce::SparseSet<int>& rows) override;
     void timerCallback() override;
     void searchChanged();
@@ -94,6 +107,8 @@ private:
     void select(const SearchRow& row); // auditions it as the selection, as it is
     void updateReadouts();  // the preview, the chips, the footer, the empty state
     void updateRenderSize();
+    // Sends a write; `ticket` is its pending edit (0: none).
+    void write(const Write& write, std::uint64_t ticket = 0);
 
     AsmaProcessor& processor_;
     AsmaLookAndFeel lookAndFeel_; // first in, last out: every child uses it
@@ -110,7 +125,7 @@ private:
     PreviewPanel preview_;
     Footer footer_;
     std::unique_ptr<juce::FileChooser> chooser_;
-    juce::String scanMessage_; // the last scan's outcome, until the next selection
+    juce::String scanMessage_; // the last scan's outcome or failed write, until the next selection
     bool quietSelection_ = false;    // selection changes that must not play
     std::uint64_t loadedStates_ = 0; // the processor's stateLoads() the controls show
     int ticks_ = 0;
@@ -119,6 +134,7 @@ private:
     std::int64_t similarFor_ = 0;       // the sample the Similar list is about
     audio::SampleInfo selectedInfo_;
     std::string selectedFolder_;
+    PendingEdits pending_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AsmaEditor)
 };

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "AsmaEditor.h"
-#include "LibraryFixture.h"
-#include "PluginTestUtil.h"
+#include "EditorRig.h"
 #include "asma/core/Analyser.h"
 #include "asma/core/UserData.h"
 #include "asma/audio/Render.h"
@@ -14,51 +12,7 @@ using namespace asma;
 namespace fs = std::filesystem;
 using app::AsmaEditor;
 using app::AsmaProcessor;
-
-namespace {
-
-struct EditorRig {
-    test::LibraryFixture f;
-    const juce::ScopedJuceInitialiser_GUI gui;
-    std::unique_ptr<AsmaProcessor> p;
-    std::unique_ptr<AsmaEditor> editor;
-    explicit EditorRig(AsmaProcessor::Mode mode = AsmaProcessor::Mode::FromWrapper)
-    {
-        f.scan();
-        p = std::make_unique<AsmaProcessor>(mode);
-        p->prepareToPlay(48000.0, 512);
-        editor.reset(dynamic_cast<AsmaEditor*>(p->createEditorAndMakeActive()));
-        REQUIRE(editor);
-        editor->poll(); // what its timer does
-    }
-    ~EditorRig()
-    {
-        p->editorBeingDeleted(editor.get());
-        editor.reset();
-    }
-    // Types into the search box the way a user would: the change arrives
-    // through the message loop.
-    void type(const char* text)
-    {
-        editor->searchBox().setText(text, true);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
-    }
-    // Blocks until the preview for the current selection is playing.
-    bool playing()
-    {
-        juce::AudioBuffer<float> buffer(2, 512);
-        juce::MidiBuffer midi;
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (std::chrono::steady_clock::now() < deadline) {
-            p->processBlock(buffer, midi);
-            if (p->engine().status().playing) return true;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        return false;
-    }
-};
-
-} // namespace
+using test::EditorRig;
 
 TEST_CASE("typing in the search box filters the table", "[editor]")
 {
