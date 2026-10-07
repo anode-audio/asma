@@ -170,23 +170,25 @@ Write Write::deleteSearch(std::string name)
 
 std::vector<std::vector<std::string>> cliCommands(const Write& w)
 {
+    // Names go after the "--" marker, so one that looks like an option
+    // ("--version") is still a name.
     const std::string id = std::to_string(w.fileId);
     using Kind = Write::Kind;
     switch (w.kind) {
     case Kind::Rate: return {{"rate", std::to_string(w.rating), "--id", id}};
     case Kind::Favourite: return {{"fav", w.on ? "on" : "off", "--id", id}};
-    case Kind::AddTag: return {{"tag", "add", w.name, "--id", id}};
-    case Kind::RemoveTag: return {{"tag", "remove", w.name, "--id", id}};
+    case Kind::AddTag: return {{"tag", "add", "--id", id, "--", w.name}};
+    case Kind::RemoveTag: return {{"tag", "remove", "--id", id, "--", w.name}};
     case Kind::CreateCollection:
-        if (!w.fileId) return {{"collection", "create", w.name}};
-        return {{"collection", "create", w.name}, {"collection", "add", w.name, "--id", id}};
-    case Kind::RenameCollection: return {{"collection", "rename", w.name, w.newName}};
-    case Kind::DeleteCollection: return {{"collection", "delete", w.name}};
-    case Kind::AddToCollection: return {{"collection", "add", w.name, "--id", id}};
-    case Kind::RemoveFromCollection: return {{"collection", "remove", w.name, "--id", id}};
-    case Kind::SaveSearch: return {{"search", "save", w.name, "--json", searchModelToJson(w.model)}};
-    case Kind::RenameSearch: return {{"search", "rename", w.name, w.newName}};
-    case Kind::DeleteSearch: return {{"search", "delete", w.name}};
+        if (!w.fileId) return {{"collection", "create", "--", w.name}};
+        return {{"collection", "create", "--", w.name}, {"collection", "add", "--id", id, "--", w.name}};
+    case Kind::RenameCollection: return {{"collection", "rename", "--", w.name, w.newName}};
+    case Kind::DeleteCollection: return {{"collection", "delete", "--", w.name}};
+    case Kind::AddToCollection: return {{"collection", "add", "--id", id, "--", w.name}};
+    case Kind::RemoveFromCollection: return {{"collection", "remove", "--id", id, "--", w.name}};
+    case Kind::SaveSearch: return {{"search", "save", "--json", searchModelToJson(w.model), "--", w.name}};
+    case Kind::RenameSearch: return {{"search", "rename", "--", w.name, w.newName}};
+    case Kind::DeleteSearch: return {{"search", "delete", "--", w.name}};
     }
     return {};
 }

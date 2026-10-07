@@ -161,13 +161,16 @@ int cmdSearch(Args& args, Db& db)
         return kOk;
     }
     if (sub == "save") {
+        // --json: the whole model as the app holds it, which options cannot
+        // all say (the sort, a folder scope). Taken first, so its value is
+        // never read as the name.
+        const auto json = args.option("json");
         // The name first: an option value would otherwise pass for it.
-        if (args.rest().empty() || args.rest().front().rfind("--", 0) == 0)
+        // After "--" it is the name whatever it looks like.
+        if (!args.literalFollows() && (args.rest().empty() || args.rest().front().rfind("--", 0) == 0))
             throw UsageError("search save needs the name before any option");
         const std::string name = required(args, "search name");
-        // --json: the whole model as the app holds it, which options cannot
-        // all say (the sort, a folder scope).
-        if (const auto json = args.option("json")) {
+        if (json) {
             rejectLeftovers(args);
             const auto model = searchModelFromJson(*json);
             if (!model) throw UsageError("--json needs a search as JSON");

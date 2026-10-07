@@ -39,3 +39,18 @@ TEST_CASE("a relative --db becomes an absolute path", "[args]")
     CHECK(path.filename() == "lib.db");
     CHECK(path.has_parent_path());
 }
+
+TEST_CASE("after --, every argument is a positional, however it looks", "[args]")
+{
+    Args args({"collection", "--id", "3", "--", "--version", "-- Drums --", "--id"});
+    CHECK(args.options("id") == Strings{"3"});
+    CHECK_FALSE(args.flag("version"));
+    CHECK(args.positional() == "collection"); // what comes before -- first
+    CHECK(args.literalFollows());
+    CHECK(args.positional() == "--version");
+    CHECK(args.positional() == "-- Drums --");
+    CHECK(args.rest() == Strings{"--id"});
+    CHECK(args.positional() == "--id");
+    CHECK_FALSE(args.positional());
+    CHECK_FALSE(args.literalFollows());
+}

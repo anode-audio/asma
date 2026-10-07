@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "Args.h"
 
+#include <algorithm>
+
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
@@ -36,6 +38,20 @@ Args Args::fromMain(int argc, char** argv)
     for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
 #endif
     return Args(std::move(args));
+}
+
+Args::Args(std::vector<std::string> args)
+{
+    const auto marker = std::find(args.begin(), args.end(), "--");
+    if (marker != args.end()) literal_.assign(marker + 1, args.end());
+    args_.assign(args.begin(), marker);
+}
+
+std::vector<std::string> Args::rest() const
+{
+    std::vector<std::string> out = args_;
+    out.insert(out.end(), literal_.begin(), literal_.end());
+    return out;
 }
 
 bool Args::flag(std::string_view name)
@@ -88,7 +104,10 @@ std::optional<std::string> Args::positional()
         args_.erase(it);
         return value;
     }
-    return std::nullopt;
+    if (literal_.empty()) return std::nullopt;
+    std::string value = literal_.front();
+    literal_.erase(literal_.begin());
+    return value;
 }
 
 } // namespace asma::cli

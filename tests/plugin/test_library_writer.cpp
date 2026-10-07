@@ -111,15 +111,15 @@ TEST_CASE("cliCommands says each write as asma commands", "[writer]")
     using V = std::vector<std::vector<std::string>>;
     CHECK(app::cliCommands(Write::rate(7, 3)) == V{{"rate", "3", "--id", "7"}});
     CHECK(app::cliCommands(Write::favourite(7, false)) == V{{"fav", "off", "--id", "7"}});
-    CHECK(app::cliCommands(Write::addTag(7, "dusty")) == V{{"tag", "add", "dusty", "--id", "7"}});
-    CHECK(app::cliCommands(Write::createCollection("Set")) == V{{"collection", "create", "Set"}});
+    CHECK(app::cliCommands(Write::addTag(7, "dusty")) == V{{"tag", "add", "--id", "7", "--", "dusty"}});
+    CHECK(app::cliCommands(Write::createCollection("Set")) == V{{"collection", "create", "--", "Set"}});
     CHECK(app::cliCommands(Write::createCollection("Set", 7)) ==
-          V{{"collection", "create", "Set"}, {"collection", "add", "Set", "--id", "7"}});
-    CHECK(app::cliCommands(Write::renameSearch("A", "B")) == V{{"search", "rename", "A", "B"}});
+          V{{"collection", "create", "--", "Set"}, {"collection", "add", "--id", "7", "--", "Set"}});
+    CHECK(app::cliCommands(Write::renameSearch("A", "B")) == V{{"search", "rename", "--", "A", "B"}});
     SearchModel model;
     model.text = "kick";
     CHECK(app::cliCommands(Write::saveSearch("Kicks", model)) ==
-          V{{"search", "save", "Kicks", "--json", "{\"v\":1,\"text\":\"kick\"}"}});
+          V{{"search", "save", "--json", "{\"v\":1,\"text\":\"kick\"}", "--", "Kicks"}});
 }
 
 TEST_CASE("a failed write says what could not be done and why", "[writer]")
@@ -150,6 +150,38 @@ TEST_CASE("both writers leave the library the same", "[writer]")
     CHECK(errors[19] == "a collection called 'album 2' already exists");
     CHECK(errors[20] == "a rating is 1 to 5, or 0 to clear it");
     CHECK(userData(f.dbPath) == kEverything);
+}
+
+TEST_CASE("names that look like options mean the same to both writers", "[writer]")
+{
+    test::LibraryFixture f;
+    f.scan();
+    const juce::ScopedJuceInitialiser_GUI gui;
+    std::unique_ptr<LibraryWriter> writer;
+    SECTION("directly")
+    {
+        writer = std::make_unique<DirectWriter>(f.dbPath, ASMA_CLI_PATH);
+    }
+    SECTION("through the helper")
+    {
+        writer = std::make_unique<CliWriter>(f.dbPath, ASMA_CLI_PATH);
+    }
+    const auto loop = idOf(f.dbPath, f.loop);
+    std::vector<std::string> errors;
+    const auto collect = [&](const std::string& error) { errors.push_back(error); };
+    writer->write(Write::createCollection("--version"), collect);
+    writer->write(Write::createCollection("-- Drums --", loop), collect);
+    writer->write(Write::renameCollection("--version", "--help"), collect);
+    writer->write(Write::addTag(loop, "--id"), collect);
+    writer->write(Write::saveSearch("--json", {}), collect);
+    writer->write(Write::renameSearch("--json", "--db"), collect);
+    settle(*writer);
+    CHECK(errors == std::vector<std::string>(6));
+    CHECK(userData(f.dbPath) == "ratings:\n"
+                                "favourites:\n"
+                                "tags: (Loops/Bass_Loop_Am_120.wav,--id)\n"
+                                "collections: (-- Drums --,Loops/Bass_Loop_Am_120.wav) (--help,)\n"
+                                "searches: (--db,{\"v\":1})\n");
 }
 
 TEST_CASE("the helper makes writes in the order given, so the last click wins", "[writer]")
