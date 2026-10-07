@@ -34,8 +34,9 @@ private:
     std::unique_ptr<juce::Button> main_, clear_;
 };
 
-// The row over the table: a chip per filter and "Clear all". It shows the
-// search it is given and reports what the user changes.
+// The row over the table: a chip per filter, "Clear all" and, at its right
+// end, "Save search". It shows the search it is given and reports what the
+// user changes.
 class ChipRow : public juce::Component {
 public:
     ChipRow();
@@ -46,9 +47,12 @@ public:
     std::function<void(const SearchModel&)> onChange;
     // A chip was clicked: open its popover against `anchor`.
     std::function<void(Facet, juce::Component& anchor)> onOpen;
+    // Save search was clicked: ask for a name against `anchor`.
+    std::function<void(juce::Component& anchor)> onSaveSearch;
 
     FilterChip& chip(Facet facet) { return *chips_[static_cast<int>(facet)]; }
     juce::Button& clearAllButton() { return clearAll_; }
+    juce::Button& saveSearchButton() { return saveSearch_; }
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -57,6 +61,7 @@ private:
     SearchModel model_;
     juce::OwnedArray<FilterChip> chips_;
     juce::TextButton clearAll_{"Clear all"};
+    juce::TextButton saveSearch_{"Save search"};
 };
 
 } // namespace asma::app

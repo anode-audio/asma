@@ -140,6 +140,13 @@ ChipRow::ChipRow()
         if (onChange) onChange(clearedAll(model_));
     };
     addChildComponent(clearAll_);
+    saveSearch_.getProperties().set("asma.quiet", true);
+    saveSearch_.getProperties().set("asma.size", 12.0f);
+    saveSearch_.getProperties().set("asma.segment", "middle");
+    saveSearch_.onClick = [this] {
+        if (onSaveSearch) onSaveSearch(saveSearch_);
+    };
+    addAndMakeVisible(saveSearch_);
     setModel({});
 }
 
@@ -166,6 +173,8 @@ void ChipRow::paint(juce::Graphics& g)
 void ChipRow::resized()
 {
     auto area = getLocalBounds().reduced(kMargin, 0);
+    saveSearch_.setBounds(area.removeFromRight(84).withSizeKeepingCentre(84, kChipHeight));
+    area.removeFromRight(kGap);
     clearAll_.setBounds(area.removeFromRight(72).withSizeKeepingCentre(72, kChipHeight));
     area.removeFromRight(kGap);
     // Ideal widths; when they do not fit, every chip gives up its share.

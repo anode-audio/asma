@@ -9,6 +9,7 @@
 #include "ui/Theme.h"
 
 #include <cmath>
+#include <utility>
 
 namespace asma::app {
 
@@ -53,6 +54,9 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
         if (index >= 0 && index < static_cast<int>(entries_.size()))
             applySearch(withEntry(entries_[static_cast<std::size_t>(index)], browser_.searchModel()));
     };
+    sidebar_.nameRefusal = [this](int index, const juce::String& name) { return nameRefusal(index, name); };
+    sidebar_.onNamed = [this](int index, const juce::String& name) { named(index, name); };
+    sidebar_.onDelete = [this](int index) { deleteEntry(index); };
     addAndMakeVisible(sidebar_);
     chips_.onChange = [this](const SearchModel& model) { applySearch(model); };
     similar_.onPick = [this](const SearchRow& row) { pickSimilar(row); };
@@ -62,6 +66,9 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
                                          [this](const SearchModel& model) { applySearch(model); });
         // Inside the editor, so a plugin's popover stays in its own window.
         juce::CallOutBox::launchAsynchronously(std::move(popover), getLocalArea(&anchor, anchor.getLocalBounds()), this);
+    };
+    chips_.onSaveSearch = [this](juce::Component& anchor) {
+        juce::CallOutBox::launchAsynchronously(saveSearchPopover(), getLocalArea(&anchor, anchor.getLocalBounds()), this);
     };
     addAndMakeVisible(chips_);
     if (processor_.isStandalone()) {
@@ -298,6 +305,96 @@ void AsmaEditor::write(const Write& w, std::uint64_t ticket)
         safe->table_.repaint();
         safe->updateReadouts();
     });
+}
+
+std::vector<std::string> AsmaEditor::namesOf(EntryKind kind) const
+{
+    std::vector<std::string> names;
+    for (const auto& e : entries_)
+        if (e.kind == kind) names.push_back(e.name);
+    return names;
+}
+
+std::optional<juce::String> AsmaEditor::nameRefusal(int index, const juce::String& name)
+{
+    const bool existing = index >= 0 && index < static_cast<int>(entries_.size());
+    const EntryKind kind = existing ? entries_[static_cast<std::size_t>(index)].kind : EntryKind::Collection;
+    const std::string current = existing ? entries_[static_cast<std::size_t>(index)].name : std::string();
+    switch (checkName(name.toStdString(), namesOf(kind), current)) {
+    case NameCheck::Empty: return juce::String();
+    case NameCheck::Taken:
+        return kind == EntryKind::SavedSearch ? "A saved search with that name exists."
+                                              : "A collection with that name exists.";
+    case NameCheck::Ok:
+    case NameCheck::Unchanged: break;
+    }
+    return std::nullopt;
+}
+
+void AsmaEditor::named(int index, const juce::String& name)
+{
+    const std::string wanted = trimmedName(name.toStdString());
+    if (index < 0) {
+        write(Write::createCollection(wanted, std::exchange(newCollectionFile_, 0)));
+        return;
+    }
+    if (index >= static_cast<int>(entries_.size())) return;
+    const SidebarEntry& entry = entries_[static_cast<std::size_t>(index)];
+    if (checkName(wanted, {}, entry.name) == NameCheck::Unchanged) return;
+    if (entry.kind == EntryKind::Collection) write(Write::renameCollection(entry.name, wanted));
+    if (entry.kind == EntryKind::SavedSearch) write(Write::renameSearch(entry.name, wanted));
+}
+
+bool AsmaEditor::asksBeforeDeleting(const SidebarEntry& entry)
+{
+    return entry.kind == EntryKind::Collection && entry.count > 0;
+}
+
+void AsmaEditor::deleteEntry(int index)
+{
+    if (index < 0 || index >= static_cast<int>(entries_.size())) return;
+    const SidebarEntry& entry = entries_[static_cast<std::size_t>(index)];
+    if (!asksBeforeDeleting(entry)) return deleteEntryNow(index);
+    const juce::String name = juce::String::fromUTF8(entry.name.c_str());
+    juce::NativeMessageBox::showOkCancelBox(
+        juce::MessageBoxIconType::QuestionIcon, "Delete collection",
+        "Delete the collection \"" + name + "\"? Its " + juce::String(entry.count)
+            + (entry.count == 1 ? " sample stays" : " samples stay") + " in the library.",
+        this, juce::ModalCallbackFunction::create([safe = juce::Component::SafePointer<AsmaEditor>(this), index, name](int ok) {
+            // Only if the entry is still the one asked about.
+            if (ok != 0 && safe && index < static_cast<int>(safe->entries_.size())
+                && juce::String::fromUTF8(safe->entries_[static_cast<std::size_t>(index)].name.c_str()) == name)
+                safe->deleteEntryNow(index);
+        }));
+}
+
+void AsmaEditor::deleteEntryNow(int index)
+{
+    const SidebarEntry entry = entries_[static_cast<std::size_t>(index)];
+    const bool lit = entryFor(entries_, browser_.searchModel()) == index;
+    if (entry.kind == EntryKind::Collection) write(Write::deleteCollection(entry.name));
+    else if (entry.kind == EntryKind::SavedSearch) write(Write::deleteSearch(entry.name));
+    else return;
+    // What was showing has gone: back to All samples.
+    if (lit && !entries_.empty()) applySearch(withEntry(entries_.front(), browser_.searchModel()));
+}
+
+std::unique_ptr<NamePopover> AsmaEditor::saveSearchPopover()
+{
+    return std::make_unique<NamePopover>(
+        "Save search", juce::String(),
+        [this](const juce::String& name) -> std::optional<juce::String> {
+            switch (checkName(name.toStdString(), namesOf(EntryKind::SavedSearch))) {
+            case NameCheck::Empty: return juce::String();
+            case NameCheck::Taken: return juce::String("A saved search with that name exists.");
+            case NameCheck::Ok:
+            case NameCheck::Unchanged: break;
+            }
+            return std::nullopt;
+        },
+        [this](const juce::String& name) {
+            write(Write::saveSearch(trimmedName(name.toStdString()), browser_.searchModel()));
+        });
 }
 
 void AsmaEditor::cellClicked(int row, int column, const juce::MouseEvent& event)

@@ -4,12 +4,14 @@
 #include "Browser.h"
 #include "LibraryView.h"
 #include "LibraryWriter.h"
+#include "Names.h"
 #include "PendingEdits.h"
 #include "Sidebar.h"
 #include "ui/AsmaLookAndFeel.h"
 #include "ui/ChipRow.h"
 #include "ui/FilterPopovers.h"
 #include "ui/Footer.h"
+#include "ui/NamePopover.h"
 #include "ui/PreviewPanel.h"
 #include "ui/SidebarView.h"
 #include "ui/SimilarView.h"
@@ -79,6 +81,12 @@ public:
     // Which star of the rating column an x (from the cell's left) falls on,
     // 1 to 5; 0 past the fifth.
     static int starAt(int x);
+    // Collections and saved searches from the sidebar and the chip row.
+    // Deleting asks first when the collection holds samples.
+    void deleteEntry(int index);
+    static bool asksBeforeDeleting(const SidebarEntry& entry);
+    // The chip row's Save search: names the search in force and saves it.
+    std::unique_ptr<NamePopover> saveSearchPopover();
 
 private:
     enum Column { kFavourite = 1, kName, kType, kBpm, kKey, kLength, kRating, kTags };
@@ -109,6 +117,12 @@ private:
     void updateRenderSize();
     // Sends a write; `ticket` is its pending edit (0: none).
     void write(const Write& write, std::uint64_t ticket = 0);
+    // Why a collection (index -1: a new one) or saved search may not take a
+    // name; nothing when it may.
+    std::optional<juce::String> nameRefusal(int index, const juce::String& name);
+    void named(int index, const juce::String& name);
+    void deleteEntryNow(int index);
+    std::vector<std::string> namesOf(EntryKind kind) const;
 
     AsmaProcessor& processor_;
     AsmaLookAndFeel lookAndFeel_; // first in, last out: every child uses it
@@ -135,6 +149,7 @@ private:
     audio::SampleInfo selectedInfo_;
     std::string selectedFolder_;
     PendingEdits pending_;
+    std::int64_t newCollectionFile_ = 0; // the sample a new collection starts with (0: none)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AsmaEditor)
 };

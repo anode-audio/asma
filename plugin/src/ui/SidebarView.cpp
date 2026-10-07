@@ -36,6 +36,17 @@ public:
         setClickingTogglesState(false);
     }
     const juce::String& count() const { return count_; }
+    std::function<void()> onMenu; // a right click, for entries that have a menu
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu() && onMenu) return onMenu();
+        juce::Button::mouseDown(e);
+    }
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu() && onMenu) return;
+        juce::Button::mouseUp(e);
+    }
     void paintButton(juce::Graphics& g, bool highlighted, bool down) override
     {
         const bool lit = getToggleState();
@@ -91,6 +102,22 @@ public:
     }
 };
 
+// The "+" beside COLLECTIONS.
+class AddButton final : public juce::Button {
+public:
+    AddButton() : juce::Button("New collection") { setTitle("New collection"); }
+    void paintButton(juce::Graphics& g, bool highlighted, bool down) override
+    {
+        if (highlighted || down) {
+            g.setColour(theme::raised);
+            g.fillRoundedRectangle(getLocalBounds().toFloat(), theme::kRadius);
+        }
+        g.setFont(theme::font(theme::Face::Text, 15.0f));
+        g.setColour(highlighted ? theme::text : theme::muted);
+        g.drawText("+", getLocalBounds(), juce::Justification::centred, false);
+    }
+};
+
 } // namespace
 
 // What scrolls: the rows and the headings between them.
@@ -109,8 +136,25 @@ public:
     }
 };
 
-SidebarView::SidebarView() : content_(std::make_unique<Content>()), problems_(std::make_unique<ProblemsButton>())
+SidebarView::SidebarView()
+    : content_(std::make_unique<Content>()), problems_(std::make_unique<ProblemsButton>()),
+      add_(std::make_unique<AddButton>())
 {
+    add_->onClick = [this] { startNewCollection(); };
+    content_->addChildComponent(*add_);
+    nameField_.setTitle("Name");
+    nameField_.setFont(theme::font(theme::Face::Text, 13.0f));
+    nameField_.setIndents(6, 5);
+    nameField_.setColour(juce::TextEditor::focusedOutlineColourId, theme::amber);
+    nameField_.onReturnKey = [this] { finishEditing(true); };
+    nameField_.onEscapeKey = [this] { finishEditing(false); };
+    nameField_.onTextChange = [this] {
+        if (refusal_.isEmpty()) return;
+        refusal_.clear();
+        nameField_.setColour(juce::TextEditor::outlineColourId, theme::amber);
+        nameField_.setTooltip({});
+    };
+    content_->addChildComponent(nameField_);
     viewport_.setViewedComponent(content_.get(), false);
     viewport_.setScrollBarsShown(true, false);
     addAndMakeVisible(viewport_);
@@ -125,6 +169,8 @@ SidebarView::~SidebarView() = default;
 void SidebarView::setEntries(std::vector<SidebarEntry> entries)
 {
     entries_ = std::move(entries);
+    // The entries moved under the field: what it was naming may be gone.
+    if (editing_ && *editing_ >= 0) finishEditing(false);
     rows_.clear();
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         const auto& e = entries_[i];
@@ -132,6 +178,14 @@ void SidebarView::setEntries(std::vector<SidebarEntry> entries)
         row->onClick = [this, i] {
             if (onPick) onPick(static_cast<int>(i));
         };
+        if (e.kind == EntryKind::Collection || e.kind == EntryKind::SavedSearch)
+            static_cast<Row*>(row)->onMenu = [this, i, row] {
+                entryMenu(static_cast<int>(i)).showMenuAsync(
+                    juce::PopupMenu::Options().withTargetComponent(row).withParentComponent(getTopLevelComponent()),
+                    [safe = juce::Component::SafePointer<SidebarView>(this), i](int result) {
+                        if (safe) safe->entryMenuChosen(static_cast<int>(i), result);
+                    });
+            };
         content_->addAndMakeVisible(row);
     }
     resized();
@@ -165,6 +219,68 @@ juce::StringArray SidebarView::sectionTitles() const
     return out;
 }
 
+void SidebarView::startNewCollection()
+{
+    editing_ = -1;
+    nameField_.setText({}, false);
+    refusal_.clear();
+    nameField_.setColour(juce::TextEditor::outlineColourId, theme::amber);
+    nameField_.setVisible(true);
+    resized();
+    nameField_.grabKeyboardFocus();
+}
+
+void SidebarView::startRename(int index)
+{
+    if (index < 0 || index >= static_cast<int>(entries_.size())) return;
+    editing_ = index;
+    nameField_.setText(juce::String::fromUTF8(entries_[static_cast<std::size_t>(index)].name.c_str()), false);
+    nameField_.selectAll();
+    refusal_.clear();
+    nameField_.setColour(juce::TextEditor::outlineColourId, theme::amber);
+    nameField_.setVisible(true);
+    resized();
+    nameField_.grabKeyboardFocus();
+}
+
+void SidebarView::finishEditing(bool keep)
+{
+    if (!editing_) return;
+    const int index = *editing_;
+    const juce::String name = nameField_.getText();
+    if (keep) {
+        const auto refused = nameRefusal ? nameRefusal(index, name) : std::nullopt;
+        if (refused) {
+            refusal_ = refused->isNotEmpty() ? *refused : juce::String("A name is needed.");
+            nameField_.setColour(juce::TextEditor::outlineColourId, theme::refused);
+            nameField_.setTooltip(refusal_);
+            return; // the field stays for another try
+        }
+    }
+    editing_.reset();
+    refusal_.clear();
+    nameField_.setVisible(false);
+    resized();
+    if (keep && onNamed) onNamed(index, name);
+}
+
+juce::PopupMenu SidebarView::entryMenu(int index) const
+{
+    juce::PopupMenu menu;
+    if (index < 0 || index >= static_cast<int>(entries_.size())) return menu;
+    const auto kind = entries_[static_cast<std::size_t>(index)].kind;
+    if (kind != EntryKind::Collection && kind != EntryKind::SavedSearch) return menu;
+    menu.addItem(kRename, juce::String::fromUTF8("Rename…"));
+    menu.addItem(kDelete, "Delete");
+    return menu;
+}
+
+void SidebarView::entryMenuChosen(int index, int result)
+{
+    if (result == kRename) startRename(index);
+    if (result == kDelete && onDelete) onDelete(index);
+}
+
 juce::String SidebarView::problemsText() const { return static_cast<const ProblemsButton*>(problems_.get())->count; }
 
 void SidebarView::paint(juce::Graphics& g)
@@ -183,20 +299,41 @@ void SidebarView::resized()
     }
     viewport_.setBounds(area);
     content_->headings.clear();
+    const int width = area.getWidth();
     int y = kTop;
     EntryKind section = EntryKind::All;
+    const auto heading = [&](const char* title) {
+        y += kSectionGap;
+        content_->headings.push_back({title, y});
+        if (juce::String(title) == "COLLECTIONS") add_->setBounds(width - 10 - 22, y, 22, kHeadingHeight - 2);
+        y += kHeadingHeight;
+    };
+    // COLLECTIONS always shows, and a new collection's field ends it.
+    bool collectionsDone = false;
+    const auto endCollections = [&] {
+        if (collectionsDone) return;
+        collectionsDone = true;
+        if (section != EntryKind::Collection) heading("COLLECTIONS");
+        if (editing_ == -1) {
+            nameField_.setBounds(14, y + 2, width - 24, kRowHeight - 4);
+            y += kRowHeight;
+        }
+    };
     for (std::size_t i = 0; i < entries_.size(); ++i) {
         const auto kind = entries_[i].kind;
-        if (const char* heading = headingFor(kind); heading && kind != section) {
-            y += kSectionGap;
-            content_->headings.push_back({heading, y});
-            y += kHeadingHeight;
-        }
+        if (kind == EntryKind::SavedSearch) endCollections();
+        if (const char* title = headingFor(kind); title && kind != section) heading(title);
         if (kind == EntryKind::Folder || kind == EntryKind::Collection || kind == EntryKind::SavedSearch) section = kind;
-        rows_[static_cast<int>(i)]->setBounds(0, y, area.getWidth(), kRowHeight);
+        auto* row = rows_[static_cast<int>(i)];
+        row->setBounds(0, y, width, kRowHeight);
+        const bool renaming = editing_ == static_cast<int>(i);
+        row->setVisible(!renaming);
+        if (renaming) nameField_.setBounds(14, y + 2, width - 24, kRowHeight - 4);
         y += kRowHeight;
     }
-    content_->setSize(area.getWidth(), y + kTop);
+    if (!entries_.empty()) endCollections();
+    add_->setVisible(!entries_.empty());
+    content_->setSize(width, y + kTop);
     content_->repaint();
 }
 

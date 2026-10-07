@@ -34,6 +34,37 @@ int xOfStar(int star)
     return -1;
 }
 
+// The sidebar entry with this name.
+int entryNamed(EditorRig& rig, const juce::String& name)
+{
+    for (int i = 0; i < rig.editor->sidebar().rowCount(); ++i)
+        if (rig.editor->sidebar().row(i).getButtonText() == name) return i;
+    return -1;
+}
+
+std::string collectionsText(EditorRig& rig)
+{
+    Db db = Db::open(rig.f.dbPath);
+    std::string out;
+    for (const auto& c : UserData(db).collections()) out += c.name + "=" + std::to_string(c.size) + ";";
+    return out;
+}
+
+std::string searchesText(EditorRig& rig)
+{
+    Db db = Db::open(rig.f.dbPath);
+    std::string out;
+    for (const auto& s : UserData(db).savedSearches()) out += s.name + "=" + searchModelToJson(s.model) + ";";
+    return out;
+}
+
+void name(app::SidebarView& view, const char* text)
+{
+    view.nameField().setText(text, true);
+    view.nameField().keyPressed(juce::KeyPress(juce::KeyPress::returnKey));
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20); // the field reports Return later
+}
+
 std::optional<int> storedRating(EditorRig& rig, const fs::path& file)
 {
     Db db = Db::open(rig.f.dbPath);
@@ -131,4 +162,108 @@ TEST_CASE("F and 0 to 5 organise the selection", "[organise]")
     settle(rig);
     CHECK_FALSE(storedRating(rig, rig.f.kick));
     CHECK_FALSE(storedFavourite(rig, rig.f.kick));
+}
+
+TEST_CASE("+ in the sidebar makes a collection; a taken name is refused", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    auto& sidebar = rig.editor->sidebar();
+    sidebar.addButton().triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20); // a click arrives later
+    name(sidebar, "  Live set ");
+    settle(rig);
+    CHECK(collectionsText(rig) == "Live set=0;");
+    REQUIRE(entryNamed(rig, "Live set") >= 0);
+
+    sidebar.startNewCollection();
+    name(sidebar, "LIVE SET");
+    CHECK(sidebar.isEditing());
+    CHECK(sidebar.refusalText() == "A collection with that name exists.");
+    sidebar.nameField().keyPressed(juce::KeyPress(juce::KeyPress::escapeKey));
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    settle(rig);
+    CHECK(collectionsText(rig) == "Live set=0;");
+}
+
+TEST_CASE("renaming a collection or saved search, and to its own name changes nothing", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    {
+        Db db = Db::open(rig.f.dbPath);
+        UserData user(db);
+        user.createCollection("Live set");
+        user.createCollection("Album");
+        user.saveSearch("Kicks", {});
+    }
+    rig.editor->poll();
+    auto& sidebar = rig.editor->sidebar();
+    sidebar.startRename(entryNamed(rig, "Live set"));
+    name(sidebar, "Live set"); // its own name: no write, no refusal
+    CHECK_FALSE(sidebar.isEditing());
+    sidebar.startRename(entryNamed(rig, "Live set"));
+    name(sidebar, "album");
+    CHECK(sidebar.refusalText() == "A collection with that name exists.");
+    name(sidebar, "Set 2");
+    sidebar.startRename(entryNamed(rig, "Kicks")); // the entries have not refreshed yet
+    name(sidebar, "Short kicks");
+    settle(rig);
+    CHECK(collectionsText(rig) == "Album=0;Set 2=0;");
+    CHECK(searchesText(rig) == "Short kicks={\"v\":1};");
+}
+
+TEST_CASE("deleting asks first only for a collection with samples, and the lit entry falls back to All", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    {
+        Db db = Db::open(rig.f.dbPath);
+        UserData user(db);
+        const auto set = user.createCollection("Live set");
+        user.addToCollection(set, Library(db).fileByAbsolutePath(rig.f.kick)->id);
+        user.createCollection("Empty");
+    }
+    rig.editor->poll();
+    using app::SidebarEntry;
+    const auto entries = app::sidebarEntries(*std::make_unique<app::LibraryView>(rig.f.dbPath));
+    for (const auto& e : entries) {
+        if (e.name == "Live set") CHECK(AsmaEditor::asksBeforeDeleting(e));
+        if (e.name == "Empty") CHECK_FALSE(AsmaEditor::asksBeforeDeleting(e));
+        if (e.kind == app::EntryKind::Folder) CHECK_FALSE(AsmaEditor::asksBeforeDeleting(e));
+    }
+
+    rig.editor->sidebar().row(entryNamed(rig, "Empty")).triggerClick(); // lit: the table shows it
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    REQUIRE(rig.p->pluginState().search.collectionId);
+    rig.editor->deleteEntry(entryNamed(rig, "Empty"));
+    CHECK_FALSE(rig.p->pluginState().search.collectionId); // All samples
+    settle(rig);
+    CHECK(collectionsText(rig) == "Live set=1;");
+    CHECK(rig.editor->sidebar().row(0).getToggleState());
+}
+
+TEST_CASE("Save search names the search in force and saves it", "[organise]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    {
+        Db db = Db::open(rig.f.dbPath);
+        UserData(db).saveSearch("Kicks", {});
+    }
+    rig.editor->poll();
+    rig.type("snare");
+    auto popover = rig.editor->saveSearchPopover();
+    CHECK_FALSE(popover->saveButton().isEnabled()); // no name yet
+    const auto typeName = [&](const char* text) {
+        popover->field().setText(text, true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(20); // the field reports changes later
+    };
+    typeName(" kicks");
+    CHECK(popover->refusalText() == "A saved search with that name exists.");
+    CHECK_FALSE(popover->saveButton().isEnabled());
+    typeName("Snares");
+    CHECK(popover->refusalText().isEmpty());
+    popover->saveButton().triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    settle(rig);
+    CHECK(searchesText(rig) == "Kicks={\"v\":1};Snares={\"v\":1,\"text\":\"snare\"};");
+    // The search in force is the saved one now: it is lit.
+    CHECK(rig.editor->sidebar().row(entryNamed(rig, "Snares")).getToggleState());
 }
