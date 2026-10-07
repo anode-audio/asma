@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include "LibraryWriter.h"
 #include "PluginState.h"
 #include "ScanJob.h"
 #include "asma/audio/AuditionEngine.h"
@@ -94,6 +95,9 @@ public:
     // Adding folders and scanning: the standalone only; null in a plugin,
     // which never writes the library from inside the host.
     ScanJob* scans() { return scans_.get(); }
+    // What the user adds to the library goes through here: written directly
+    // in the standalone, by the asma helper in a plugin.
+    LibraryWriter& writer() { return *writer_; }
 
 private:
     // One preview cache for every instance in the process.
@@ -105,6 +109,7 @@ private:
     const bool standalone_;
     std::unique_ptr<ableton::Link> link_; // standalone only
     std::unique_ptr<ScanJob> scans_;      // standalone only
+    std::unique_ptr<LibraryWriter> writer_;
     static constexpr double kDefaultBpm = 120.0; // the standalone's tempo until set
     std::atomic<bool> linkOn_{false};
     std::atomic<double> manualBpm_{0.0};

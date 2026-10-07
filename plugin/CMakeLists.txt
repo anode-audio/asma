@@ -67,3 +67,14 @@ clap_juce_extensions_plugin(TARGET asma_plugin
 add_dependencies(asma_plugin_Standalone asma-scan)
 add_custom_command(TARGET asma_plugin_Standalone POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:asma-scan> $<TARGET_FILE_DIR:asma_plugin_Standalone>)
+# Every format writes the library through the asma helper beside its binary
+# (the standalone only for a retry). It goes in as asma-cli: the app's and
+# the bundles' own binaries are called asma.
+foreach(format Standalone VST3 AU LV2 CLAP)
+  if(TARGET asma_plugin_${format})
+    add_dependencies(asma_plugin_${format} asma)
+    add_custom_command(TARGET asma_plugin_${format} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:asma>
+              $<TARGET_FILE_DIR:asma_plugin_${format}>/asma-cli${CMAKE_EXECUTABLE_SUFFIX})
+  endif()
+endforeach()

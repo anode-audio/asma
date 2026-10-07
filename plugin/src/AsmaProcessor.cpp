@@ -20,8 +20,16 @@ AsmaProcessor::AsmaProcessor(Mode mode)
         state_.sync.hostBpm = kDefaultBpm;
         manualBpm_.store(kDefaultBpm, std::memory_order_relaxed);
         link_ = std::make_unique<ableton::Link>(kDefaultBpm);
-        const auto app = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
-        scans_ = std::make_unique<ScanJob>(libraryPath_, ScanJob::workerNextTo(fromUtf8(app.getFullPathName().toStdString())));
+    }
+    // In a plugin, the plugin's own binary (where JUCE can tell), so the
+    // helpers are found inside its bundle.
+    const auto binary = fromUtf8(
+        juce::File::getSpecialLocation(juce::File::currentExecutableFile).getFullPathName().toStdString());
+    if (standalone_) {
+        scans_ = std::make_unique<ScanJob>(libraryPath_, ScanJob::workerNextTo(binary));
+        writer_ = std::make_unique<DirectWriter>(libraryPath_, LibraryWriter::cliNextTo(binary));
+    } else {
+        writer_ = std::make_unique<CliWriter>(libraryPath_, LibraryWriter::cliNextTo(binary));
     }
     engine_.loader().start();
 }
