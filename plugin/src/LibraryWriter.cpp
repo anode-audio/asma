@@ -193,6 +193,18 @@ std::vector<std::vector<std::string>> cliCommands(const Write& w)
     return {};
 }
 
+std::vector<std::vector<std::string>> retrySteps(const std::vector<std::int64_t>& fileIds)
+{
+    constexpr std::size_t kChunk = 500; // under 9,000 characters of ids
+    std::vector<std::vector<std::string>> steps;
+    for (std::size_t i = 0; i < fileIds.size(); ++i) {
+        if (i % kChunk == 0) steps.push_back({"retry"});
+        steps.back().push_back("--id");
+        steps.back().push_back(std::to_string(fileIds[i]));
+    }
+    return steps;
+}
+
 std::string reasonText(const std::string& error)
 {
     if (error.find("locked") != std::string::npos || error.find("busy") != std::string::npos)
@@ -307,8 +319,10 @@ std::string CliLane::runStep(const std::vector<std::string>& step, const std::fu
     std::optional<Subprocess> process;
     try {
         process = Subprocess::start(cli, args);
-    } catch (const SubprocessError&) {
-        return kHelperMissing;
+    } catch (const SubprocessError& e) {
+        std::error_code ec;
+        if (!std::filesystem::exists(cli, ec)) return kHelperMissing;
+        return std::string("could not start asma's command-line helper (") + e.what() + ")";
     }
     {
         const std::lock_guard lock(mutex_);
@@ -340,13 +354,8 @@ LibraryWriter::LibraryWriter(std::filesystem::path dbPath, std::filesystem::path
 void LibraryWriter::retry(std::vector<std::int64_t> fileIds, RetryUpdate update)
 {
     if (fileIds.empty()) return;
-    std::vector<std::string> step{"retry"};
-    for (const auto id : fileIds) {
-        step.push_back("--id");
-        step.push_back(std::to_string(id));
-    }
     CliLane::Command command;
-    command.steps = {std::move(step)};
+    command.steps = retrySteps(fileIds);
     command.onLine = [update](const std::string& line) {
         if (line == "waiting for the scan" && update) update({RetryEvent::Kind::Waiting, {}});
     };

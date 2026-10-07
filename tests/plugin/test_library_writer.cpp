@@ -208,6 +208,32 @@ TEST_CASE("a missing helper is reported, not hidden", "[writer]")
     CHECK(error == "asma's command-line helper is missing");
 }
 
+TEST_CASE("Retry all goes to the helper in chunks a command line can hold", "[writer][retry]")
+{
+    std::vector<std::int64_t> ids;
+    for (std::int64_t id = 1; id <= 1201; ++id) ids.push_back(id);
+    const auto steps = app::retrySteps(ids);
+    REQUIRE(steps.size() == 3);
+    CHECK(steps[0].size() == 1 + 2 * 500); // "retry", then --id N for each
+    CHECK(steps[2].size() == 1 + 2 * 201);
+    CHECK(steps[2].back() == "1201");
+}
+
+TEST_CASE("a helper that is there but will not start is not called missing", "[writer]")
+{
+    test::LibraryFixture f;
+    f.scan();
+    const juce::ScopedJuceInitialiser_GUI gui;
+    const fs::path notAProgram = f.dir.path() / "asma-cli";
+    test::writeBytes(notAProgram, "not a program");
+    CliWriter writer(f.dbPath, notAProgram);
+    std::string error;
+    writer.write(Write::rate(idOf(f.dbPath, f.loop), 3), [&](const std::string& e) { error = e; });
+    settle(writer);
+    CHECK_FALSE(error.empty());
+    CHECK(error != "asma's command-line helper is missing");
+}
+
 TEST_CASE("a helper that crashes is reported as a crash", "[writer]")
 {
     test::LibraryFixture f;

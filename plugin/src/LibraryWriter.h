@@ -52,6 +52,9 @@ struct Write {
 // The asma commands that make a write, each after "asma --db PATH
 // --errors-to-stdout"; two for a collection made with a sample in it.
 std::vector<std::vector<std::string>> cliCommands(const Write& write);
+// The asma commands for a retry of these files: "retry --id N...", in chunks
+// a command line can hold (Windows takes 32,767 characters).
+std::vector<std::vector<std::string>> retrySteps(const std::vector<std::int64_t>& fileIds);
 // An error from the library or the helper in words for the footer.
 std::string reasonText(const std::string& error);
 // What the footer says when a write fails: "Could not save the rating: the
