@@ -543,7 +543,10 @@ without playing, with its tempo and key from the library.
   creates a new library with the backup's folders (or, with no backup, those the
   damaged file still yields), scans them and restores the backup. The footer
   says so: "The library was damaged and has been rebuilt; your ratings and
-  collections were restored from 7 October."
+  collections were restored from 7 October." A file at the library's path that
+  is not a database at all counts as damaged. On Windows a file another asma
+  process holds open cannot be moved: the rebuild waits and is tried again until
+  it is free.
 - **Daily backup:** once a day while asma runs, `asma backup` writes
   `backup.json` beside the library (written aside, then renamed into place),
   keeping the day before's as `backup-previous.json`. It holds the folders; each

@@ -36,6 +36,13 @@ Ratings, favourites, tags, collections and saved searches:
     asma query --saved "Fast loops" --sort rating --desc
     asma retry ~/Samples/Drums/broken.wav       # read a failed file again
 
+Keeping the library safe:
+
+    asma check                   # is the library sound?
+    asma backup                  # the user data, beside the library
+    asma restore backup.json     # give a library a backup's user data
+    asma repair                  # rebuild a damaged library from its backup
+
 The library lives in the platform data directory (on macOS
 `~/Library/Application Support/Anode Labs/asma`); `--db PATH` or the
 `ASMA_DATA_DIR` environment variable override it.
@@ -102,6 +109,15 @@ keeps the search in force. When files cannot be read or analysed, Problems
 appears in the sidebar: its panel lists each with the reason, and Retry reads it
 again. Changes show at once; in a plugin, which never writes the library inside
 the host, the `asma-cli` helper shipped beside it makes them.
+
+While any asma window is open, the app's or a plugin's, the library follows its
+folders: a sample dropped into one appears within seconds, and one deleted or
+renamed outside asma goes or follows. Each folder is also rescanned at startup
+and every 15 minutes, for what the operating system's change notices miss. The
+library is checked when asma starts; a damaged one is moved aside as
+`library.db.corrupt` and rebuilt, and your ratings, favourites, tags,
+collections and saved searches come back from `backup.json`, which asma writes
+beside the library once a day.
 
 The look is checked against the approved design by `[fidelity]` in
 `asma_plugin_tests`, on macOS only; `tests/ui/reference/README.md` says how the
