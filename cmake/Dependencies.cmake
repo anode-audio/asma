@@ -30,9 +30,26 @@ FetchContent_Declare(signalsmith_stretch
   GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git
   GIT_TAG a670068d9aeb64913331d5cc29337b19a457a7df # 1.4.0
   GIT_SHALLOW FALSE)
-FetchContent_MakeAvailable(sqlite xxhash dr_libs stb ebur128 signalsmith_stretch)
+# Folder change notices (FSEvents, ReadDirectoryChangesW, inotify); MIT.
+FetchContent_Declare(efsw
+  GIT_REPOSITORY https://github.com/SpartanJ/efsw.git
+  GIT_TAG 41ddf6822f2d0dec7e14fafa09c4cef391137b20 # 1.7.2
+  GIT_SHALLOW FALSE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+set(BUILD_TEST_APP OFF CACHE BOOL "" FORCE)
+set(EFSW_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(sqlite xxhash dr_libs stb ebur128 signalsmith_stretch efsw)
 # Header-only; SYSTEM keeps their warnings out of ours.
 set_target_properties(signalsmith-stretch signalsmith-linear PROPERTIES SYSTEM TRUE)
+
+# The LV2 plugin is a shared library: everything it links must be PIC.
+set_target_properties(efsw-static PROPERTIES POSITION_INDEPENDENT_CODE ON SYSTEM TRUE)
+if(MSVC)
+  target_compile_options(efsw-static PRIVATE /w)
+else()
+  target_compile_options(efsw-static PRIVATE -w)
+endif()
 
 add_library(asma_sqlite STATIC ${sqlite_SOURCE_DIR}/sqlite3.c)
 target_include_directories(asma_sqlite SYSTEM PUBLIC ${sqlite_SOURCE_DIR})
