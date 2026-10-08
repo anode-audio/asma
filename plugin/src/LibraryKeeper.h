@@ -83,6 +83,7 @@ private:
     LibraryView view_;
     ScanSchedule schedule_;
     std::vector<FolderWatcher::Folder> folders_;
+    bool watched_ = false; // folders_ given to the watcher at least once
     std::map<std::int64_t, std::string> names_; // what progress calls each folder
     std::optional<std::int64_t> scanning_;
     std::string message_;

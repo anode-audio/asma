@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -61,6 +62,11 @@ struct FolderWatcher::Impl final : efsw::FileWatchListener {
     std::vector<fs::path> ignored;
     bool stopping = false;
     std::thread reporter;
+    std::optional<std::vector<Folder>> wanted; // the last watch(), not yet carried out
+    bool applying = false;
+    std::vector<std::int64_t> failedIds;
+    std::condition_variable wantedWake;
+    std::thread applier;
     // Last, so it goes first: its thread calls handleFileAction, which uses
     // everything above.
     efsw::FileWatcher watcher;
@@ -69,6 +75,7 @@ struct FolderWatcher::Impl final : efsw::FileWatchListener {
     {
         watcher.watch(); // efsw's own thread delivers handleFileAction
         reporter = std::thread([this] { report(); });
+        applier = std::thread([this] { apply(); });
     }
 
     ~Impl() override
@@ -81,9 +88,38 @@ struct FolderWatcher::Impl final : efsw::FileWatchListener {
             byWatch.clear();
         }
         wake.notify_all();
+        wantedWake.notify_all();
         reporter.join();
+        applier.join();
+        {
+            const std::lock_guard lock(mutex); // what the applier added meanwhile
+            watches.clear();
+            for (const auto& [id, w] : folders) watches.push_back(w.watch);
+        }
         for (const auto w : watches) watcher.removeWatch(w);
     }
+
+    // Carries out each watch() in turn, on this thread.
+    void apply()
+    {
+        std::unique_lock lock(mutex);
+        while (!stopping) {
+            if (!wanted) {
+                wantedWake.wait(lock);
+                continue;
+            }
+            std::vector<Folder> next = std::move(*wanted);
+            wanted.reset();
+            applying = true;
+            lock.unlock();
+            std::vector<std::int64_t> notWatched = change(next);
+            lock.lock();
+            failedIds = std::move(notWatched);
+            applying = false;
+        }
+    }
+
+    std::vector<std::int64_t> change(const std::vector<Folder>& asked);
 
     void handleFileAction(efsw::WatchID watchId, const std::string& dir, const std::string& filename,
                           efsw::Action action, const std::string&) override
@@ -145,47 +181,68 @@ FolderWatcher::FolderWatcher(Changed onChanged, std::chrono::milliseconds quiet)
 
 FolderWatcher::~FolderWatcher() = default;
 
-std::vector<std::int64_t> FolderWatcher::watch(const std::vector<Folder>& folders)
+std::vector<std::int64_t> FolderWatcher::Impl::change(const std::vector<Folder>& asked)
 {
-    std::vector<Folder> wanted;
-    for (const auto& f : folders) wanted.push_back({f.id, real(f.path)});
+    std::vector<Folder> want;
+    for (const auto& f : asked) want.push_back({f.id, real(f.path)});
     // What to drop and what to add, decided under the lock; efsw is called
     // outside it, since its thread may be waiting for the lock to report.
     std::vector<efsw::WatchID> drop;
     std::vector<Folder> add;
     {
-        const std::lock_guard lock(impl_->mutex);
-        for (auto it = impl_->folders.begin(); it != impl_->folders.end();) {
-            const auto keep = std::find_if(wanted.begin(), wanted.end(), [&](const Folder& f) {
+        const std::lock_guard lock(mutex);
+        for (auto it = folders.begin(); it != folders.end();) {
+            const auto keep = std::find_if(want.begin(), want.end(), [&](const Folder& f) {
                 return f.id == it->first && f.path == it->second.path;
             });
-            if (keep != wanted.end()) {
+            if (keep != want.end()) {
                 ++it;
                 continue;
             }
             drop.push_back(it->second.watch);
-            impl_->byWatch.erase(it->second.watch);
-            impl_->pending.erase(it->first);
-            it = impl_->folders.erase(it);
+            byWatch.erase(it->second.watch);
+            pending.erase(it->first);
+            it = folders.erase(it);
         }
-        for (const auto& f : wanted)
-            if (!impl_->folders.count(f.id)) add.push_back(f);
+        for (const auto& f : want)
+            if (!folders.count(f.id)) add.push_back(f);
     }
-    for (const auto w : drop) impl_->watcher.removeWatch(w);
-    std::vector<std::int64_t> failed;
+    for (const auto w : drop) watcher.removeWatch(w);
+    std::vector<std::int64_t> notWatched;
     for (const auto& f : add) {
         std::error_code ec;
-        const efsw::WatchID id = fs::is_directory(f.path, ec) ? impl_->watcher.addWatch(toUtf8(f.path), impl_.get(), true)
+        const efsw::WatchID id = fs::is_directory(f.path, ec) ? watcher.addWatch(toUtf8(f.path), this, true)
                                                               : efsw::WatchID(-1);
         if (id < 0) {
-            failed.push_back(f.id);
+            notWatched.push_back(f.id);
             continue;
         }
-        const std::lock_guard lock(impl_->mutex);
-        impl_->folders[f.id] = {id, f.path};
-        impl_->byWatch[id] = f.id;
+        const std::lock_guard lock(mutex);
+        folders[f.id] = {id, f.path};
+        byWatch[id] = f.id;
     }
-    return failed;
+    return notWatched;
+}
+
+void FolderWatcher::watch(const std::vector<Folder>& folders)
+{
+    {
+        const std::lock_guard lock(impl_->mutex);
+        impl_->wanted = folders;
+    }
+    impl_->wantedWake.notify_all();
+}
+
+bool FolderWatcher::applied() const
+{
+    const std::lock_guard lock(impl_->mutex);
+    return !impl_->wanted && !impl_->applying;
+}
+
+std::vector<std::int64_t> FolderWatcher::failed() const
+{
+    const std::lock_guard lock(impl_->mutex);
+    return impl_->failedIds;
 }
 
 void FolderWatcher::ignore(const std::filesystem::path& dir)

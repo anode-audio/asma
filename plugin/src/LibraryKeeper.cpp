@@ -4,6 +4,8 @@
 #include "asma/core/Fs.h"
 #include "asma/core/Json.h"
 
+#include <algorithm>
+
 
 namespace asma::app {
 
@@ -90,18 +92,28 @@ void LibraryKeeper::folderChanged(std::int64_t rootId)
 
 void LibraryKeeper::readFolders(Clock::time_point now)
 {
-    folders_.clear();
+    std::vector<FolderWatcher::Folder> folders;
     names_.clear();
     std::vector<std::int64_t> ids;
     for (const auto& r : view_.roots()) {
         if (!r.enabled) continue;
         const auto path = fromUtf8(r.path);
-        folders_.push_back({r.id, path});
+        folders.push_back({r.id, path});
         names_[r.id] = toUtf8(path.filename());
         ids.push_back(r.id);
     }
     schedule_.setFolders(ids, now);
-    watcher_->watch(folders_); // a folder it cannot watch now (unplugged) is polled, and offered again later
+    // Only a different set of folders is worth the watcher's time: setting a
+    // watch walks the tree on Linux.
+    const auto same = [](const FolderWatcher::Folder& a, const FolderWatcher::Folder& b) {
+        return a.id == b.id && a.path == b.path;
+    };
+    const bool changed = folders.size() != folders_.size() || !std::equal(folders.begin(), folders.end(), folders_.begin(), same);
+    folders_ = std::move(folders);
+    if (changed || !watched_) {
+        watcher_->watch(folders_);
+        watched_ = true;
+    }
 }
 
 void LibraryKeeper::finished(const ScanReport& report)
@@ -239,7 +251,8 @@ void LibraryKeeper::tick(Clock::time_point now)
         if (const auto report = runner_->takeReport()) finished(*report);
         schedule_.scanned(*scanning_, now);
         scanning_.reset();
-        watcher_->watch(folders_); // a folder back from an unplugged drive is watched again
+        // A folder that could not be watched (an unplugged drive) is offered again.
+        if (watcher_->applied() && !watcher_->failed().empty()) watcher_->watch(folders_);
     }
     if (!scanning_)
         if (const auto next = schedule_.next(now))

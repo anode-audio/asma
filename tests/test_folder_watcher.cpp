@@ -49,6 +49,14 @@ struct Reports {
     }
 };
 
+// watch() hands its work to the watcher's thread; this waits for it.
+bool waitApplied(FolderWatcher& watcher)
+{
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (!watcher.applied() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    return watcher.applied();
+}
+
 struct Rig {
     TempDir dir;
     fs::path a = dir.path() / "A";
@@ -59,7 +67,9 @@ struct Rig {
     {
         fs::create_directories(a / "Drums");
         fs::create_directories(b);
-        CHECK(watcher.watch({{1, a}, {2, b}}).empty());
+        watcher.watch({{1, a}, {2, b}});
+        REQUIRE(waitApplied(watcher));
+        CHECK(watcher.failed().empty());
         // macOS can still deliver notices for the folders just made: let
         // them come and go before the test acts.
         std::this_thread::sleep_for(1500ms);
@@ -111,8 +121,9 @@ TEST_CASE("hidden files and ignored directories never count", "[watcher]")
 TEST_CASE("a folder no longer watched is not reported; a missing one is given back", "[watcher]")
 {
     Rig rig;
-    const auto failed = rig.watcher.watch({{1, rig.a}, {3, rig.dir.path() / "Unplugged"}});
-    CHECK(failed == std::vector<std::int64_t>{3});
+    rig.watcher.watch({{1, rig.a}, {3, rig.dir.path() / "Unplugged"}});
+    REQUIRE(waitApplied(rig.watcher));
+    CHECK(rig.watcher.failed() == std::vector<std::int64_t>{3});
     test::writeBytes(rig.b / "new.wav", "x");
     test::writeBytes(rig.a / "new.wav", "x");
     REQUIRE(rig.reports.waitFor(1, 1));
@@ -125,4 +136,25 @@ TEST_CASE("a folder of samples renamed inside a watched folder is reported", "[w
     Rig rig;
     fs::rename(rig.a / "Drums", rig.a / "Percussion");
     CHECK(rig.reports.waitFor(1, 1));
+}
+
+TEST_CASE("watch returns at once, and the folders are watched soon after on the watcher's thread", "[watcher]")
+{
+    TempDir dir;
+    std::vector<FolderWatcher::Folder> many;
+    for (int i = 0; i < 40; ++i) {
+        fs::create_directories(dir.path() / ("F" + std::to_string(i)) / "a" / "b");
+        many.push_back({i + 1, dir.path() / ("F" + std::to_string(i))});
+    }
+    Reports reports;
+    FolderWatcher watcher([&](std::int64_t id) { reports.add(id); }, 1s);
+    const auto before = std::chrono::steady_clock::now();
+    watcher.watch(many);
+    CHECK(std::chrono::steady_clock::now() - before < 50ms); // the caller (the UI) never waits for the disk
+    REQUIRE(waitApplied(watcher));
+    CHECK(watcher.failed().empty());
+    std::this_thread::sleep_for(1500ms);
+    reports.clear();
+    test::writeBytes(dir.path() / "F7" / "a" / "b" / "new.wav", "x");
+    CHECK(reports.waitFor(8, 1));
 }

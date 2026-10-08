@@ -33,9 +33,16 @@ public:
     FolderWatcher& operator=(const FolderWatcher&) = delete;
 
     // Watches exactly these folders from now on: new ones are added, ones no
-    // longer listed are dropped. Gives the ids of folders it could not watch
-    // (missing, or not a folder), which the caller may offer again later.
-    std::vector<std::int64_t> watch(const std::vector<Folder>& folders);
+    // longer listed are dropped. Returns at once: the work (which walks the
+    // whole tree on Linux, and may wait on a sleeping disk) is done on the
+    // watcher's own thread. Offering the same folders again retries those
+    // that failed.
+    void watch(const std::vector<Folder>& folders);
+    // Whether the last watch() has been carried out.
+    bool applied() const;
+    // The folders the last carried-out watch() could not watch (missing, or
+    // not a folder), to offer again later.
+    std::vector<std::int64_t> failed() const;
     // Changes under this directory never count (asma's own data directory).
     void ignore(const std::filesystem::path& dir);
 
