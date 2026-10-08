@@ -163,3 +163,38 @@ TEST_CASE("writing a backup keeps the one before, and leaves no half-written fil
     CHECK_THROWS(writeBackup(lib.db, dir.path() / "no-such-dir" / "backup.json", dir.path() / "no-such-dir" / "p.json"));
     CHECK(read(previous) == first);
 }
+
+TEST_CASE("data for samples not found is carried by each backup, and given back when they are", "[backup]")
+{
+    TempDir dir;
+    const fs::path a = dir.path() / "A", b = dir.path() / "B";
+    wav(a / "kick.wav", 1);
+    wav(b / "pad.wav", 2); // on a drive that will be away
+    const fs::path path = dir.path() / "backup.json", previous = dir.path() / "backup-previous.json";
+    {
+        Lib old(a);
+        const auto bRoot = old.lib.addRoot(b);
+        scanRoot(old.db, bRoot);
+        const auto pad = old.lib.fileByPath(bRoot, "pad.wav")->id;
+        old.user.setRating(pad, 4);
+        old.user.addToCollection(old.user.createCollection("Pads"), pad);
+        writeBackup(old.db, path, previous);
+    }
+    // Rebuilt while B was unplugged: pad.wav is nowhere to be found.
+    Lib fresh(a);
+    CHECK(restoreBackup(fresh.db, read(path)).unmatched == 1);
+    writeBackup(fresh.db, path, previous);
+    writeBackup(fresh.db, path, previous); // two days on: both files would have lost it
+    const std::string kept = read(path);
+    CHECK(kept.find("\"rating\":4") != std::string::npos);
+    CHECK(read(previous).find("\"rating\":4") != std::string::npos);
+
+    // B is back and scanned: the next backup gives pad.wav its data again.
+    const auto bRoot = fresh.lib.addRoot(b);
+    scanRoot(fresh.db, bRoot);
+    writeBackup(fresh.db, path, previous);
+    const auto pad = fresh.lib.fileByPath(bRoot, "pad.wav")->id;
+    CHECK(fresh.user.rating(pad) == 4);
+    REQUIRE(fresh.user.collectionByName("Pads"));
+    CHECK(fresh.user.collectionByName("Pads")->size == 1);
+}

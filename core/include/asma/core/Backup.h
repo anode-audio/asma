@@ -21,7 +21,10 @@ std::string backupJson(Db& db, std::string_view writtenAt);
 
 // Writes backupJson (stamped now) to `path`: through `path` + ".tmp" and a
 // rename, so a crash never leaves half a backup, moving the file already at
-// `path` to `previous` first. Throws std::runtime_error when it cannot.
+// `path` to `previous` first. What the backup already at `path` has for
+// samples the library does not hold (after a rebuild with a drive away) is
+// carried into the new one, marked so, and given back to those samples once
+// they are in the library again. Throws std::runtime_error when it cannot.
 void writeBackup(Db& db, const std::filesystem::path& path, const std::filesystem::path& previous);
 
 struct RestoreStats {

@@ -149,7 +149,7 @@ void LibraryKeeper::repair()
             news += day.empty() ? "there was no backup to restore your ratings and collections from."
                                 : "your ratings and collections were restored from " + day + ".";
             if (const auto lost = number(doc, "unmatched"))
-                news += " " + std::to_string(lost) + " organised samples were not found.";
+                news += " " + groupDigits(lost) + " organised samples were not found; their ratings come back when they are.";
             tell(news);
             schedule_ = ScanSchedule{}; // every folder is new to the new library: scan them all
         } else if (result == "locked" || result == "in_use") {

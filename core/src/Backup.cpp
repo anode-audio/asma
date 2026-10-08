@@ -10,6 +10,7 @@
 #include <ctime>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -83,9 +84,60 @@ std::vector<std::int64_t> filesWith(Db& db, const JsonValue& item)
     return ids;
 }
 
+// Gives the files with this entry's content its rating, favourite and tags.
+void applyFile(Db& db, const JsonValue& item, const std::vector<std::int64_t>& ids)
+{
+    Library lib(db);
+    UserData user(db);
+    const JsonValue* rating = item.get("rating");
+    const JsonValue* favourite = item.get("favourite");
+    for (const auto id : ids) {
+        if (rating && rating->asInt() && *rating->asInt() >= 1 && *rating->asInt() <= 5)
+            user.setRating(id, static_cast<int>(*rating->asInt()));
+        if (favourite && favourite->asBool()) user.setFavourite(id, *favourite->asBool());
+        for (const auto& tag : arrayOf(item, "tags"))
+            if (const std::string* t = tag.asString(); t && !t->empty()) lib.addUserTag(id, *t);
+    }
+}
+
+// A file entry of an older backup again, marked carried: its sample is not in
+// the library now (an unplugged drive), and its data must not be lost.
+std::string carriedFile(const JsonValue& item)
+{
+    std::vector<std::pair<std::string, std::string>> m{{"hash", jsonString(text(item, "hash"))}};
+    if (const JsonValue* size = item.get("size"); size && size->asInt()) m.emplace_back("size", std::to_string(*size->asInt()));
+    if (const std::string path = text(item, "path"); !path.empty()) m.emplace_back("path", jsonString(path));
+    if (const JsonValue* r = item.get("rating"); r && r->asInt()) m.emplace_back("rating", std::to_string(*r->asInt()));
+    if (const JsonValue* f = item.get("favourite"); f && f->asBool() && *f->asBool()) m.emplace_back("favourite", "true");
+    std::vector<std::string> tags;
+    for (const auto& tag : arrayOf(item, "tags"))
+        if (const std::string* t = tag.asString()) tags.push_back(jsonString(*t));
+    if (!tags.empty()) m.emplace_back("tags", array(tags));
+    m.emplace_back("carried", "true");
+    return object(m);
+}
+
+std::string member(const JsonValue& item)
+{
+    const JsonValue* size = item.get("size");
+    return object({{"hash", jsonString(text(item, "hash"))},
+                   {"size", std::to_string(size && size->asInt() ? *size->asInt() : 0)}});
+}
+
+struct Carried {
+    std::vector<std::string> files;                           // file entries
+    std::map<std::string, std::vector<std::string>> members; // collection name: member entries
+};
+
+std::string document(Db& db, std::string_view writtenAt, const Carried& carried);
+
 } // namespace
 
-std::string backupJson(Db& db, std::string_view writtenAt)
+std::string backupJson(Db& db, std::string_view writtenAt) { return document(db, writtenAt, {}); }
+
+namespace {
+
+std::string document(Db& db, std::string_view writtenAt, const Carried& carried)
 {
     Library lib(db);
     UserData user(db);
@@ -116,6 +168,7 @@ std::string backupJson(Db& db, std::string_view writtenAt)
         if (!tags.empty()) m.emplace_back("tags", array(tags));
         files.push_back(object(m));
     }
+    files.insert(files.end(), carried.files.begin(), carried.files.end());
 
     std::vector<std::string> collections;
     std::map<std::int64_t, std::string> collectionNames;
@@ -128,8 +181,14 @@ std::string backupJson(Db& db, std::string_view writtenAt)
         std::vector<std::string> members;
         while (q.step())
             members.push_back(object({{"hash", jsonString(q.getText(0))}, {"size", std::to_string(q.getInt(1))}}));
-        collections.push_back(object({{"name", jsonString(c.name)}, {"files", array(members)}}));
+        std::vector<std::pair<std::string, std::string>> m{{"name", jsonString(c.name)}, {"files", array(members)}};
+        if (const auto it = carried.members.find(c.name); it != carried.members.end())
+            m.emplace_back("carried", array(it->second));
+        collections.push_back(object(m));
     }
+    for (const auto& [name, members] : carried.members) // collections the library no longer has
+        if (!user.collectionByName(name))
+            collections.push_back(object({{"name", jsonString(name)}, {"files", "[]"}, {"carried", array(members)}}));
 
     std::vector<std::string> searches;
     for (const auto& s : user.savedSearches()) {
@@ -150,9 +209,55 @@ std::string backupJson(Db& db, std::string_view writtenAt)
            "\n";
 }
 
+// What the backup at `path` has for samples the library does not: carried
+// into the next backup. Entries carried before whose samples are back give
+// them their data again.
+Carried carryForward(Db& db, const fs::path& path)
+{
+    Carried carried;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return carried;
+    std::stringstream text;
+    text << in.rdbuf();
+    JsonValue old;
+    try {
+        old = parseBackup(text.str());
+    } catch (const JsonError&) {
+        return carried; // not one we can read: nothing to carry
+    }
+    UserData user(db);
+    Transaction tx(db);
+    for (const auto& item : arrayOf(old, "files")) {
+        const auto ids = filesWith(db, item);
+        const JsonValue* was = item.get("carried");
+        if (ids.empty()) carried.files.push_back(carriedFile(item));
+        else if (was && was->asBool() && *was->asBool()) applyFile(db, item, ids); // back again
+    }
+    for (const auto& c : arrayOf(old, "collections")) {
+        const std::string name = ::asma::text(c, "name");
+        if (name.empty()) continue;
+        for (const char* list : {"files", "carried"})
+            for (const auto& m : arrayOf(c, list)) {
+                const auto ids = filesWith(db, m);
+                if (ids.empty()) {
+                    carried.members[name].push_back(member(m));
+                } else if (std::string(list) == "carried") {
+                    const auto existing = user.collectionByName(name);
+                    const std::int64_t id = existing ? existing->id : user.createCollection(name);
+                    for (const auto file : ids) user.addToCollection(id, file);
+                }
+            }
+    }
+    tx.commit();
+    return carried;
+}
+
+} // namespace
+
 void writeBackup(Db& db, const fs::path& path, const fs::path& previous)
 {
-    const std::string json = backupJson(db, utcNow());
+    const Carried carried = carryForward(db, path);
+    const std::string json = document(db, utcNow(), carried);
     fs::path tmp = path;
     tmp += ".tmp";
     {
@@ -181,15 +286,7 @@ RestoreStats restoreBackup(Db& db, std::string_view json)
             continue;
         }
         ++stats.files;
-        const JsonValue* rating = item.get("rating");
-        const JsonValue* favourite = item.get("favourite");
-        for (const auto id : ids) {
-            if (rating && rating->asInt() && *rating->asInt() >= 1 && *rating->asInt() <= 5)
-                user.setRating(id, static_cast<int>(*rating->asInt()));
-            if (favourite && favourite->asBool()) user.setFavourite(id, *favourite->asBool());
-            for (const auto& tag : arrayOf(item, "tags"))
-                if (const std::string* t = tag.asString(); t && !t->empty()) lib.addUserTag(id, *t);
-        }
+        applyFile(db, item, ids);
     }
     std::map<std::string, std::int64_t> collectionIds;
     for (const auto& item : arrayOf(doc, "collections")) {
@@ -199,8 +296,9 @@ RestoreStats restoreBackup(Db& db, std::string_view json)
         const std::int64_t id = existing ? existing->id : user.createCollection(name);
         collectionIds[name] = id;
         ++stats.collections;
-        for (const auto& member : arrayOf(item, "files"))
-            for (const auto file : filesWith(db, member)) user.addToCollection(id, file);
+        for (const char* list : {"files", "carried"})
+            for (const auto& m : arrayOf(item, list))
+                for (const auto file : filesWith(db, m)) user.addToCollection(id, file);
     }
     for (const auto& item : arrayOf(doc, "searches")) {
         const std::string name = text(item, "name");
