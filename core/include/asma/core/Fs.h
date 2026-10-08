@@ -43,4 +43,10 @@ std::filesystem::path defaultDataDir();
 // meaningful for equality and ordering on the same machine.
 std::int64_t fileTimeToInt(std::filesystem::file_time_type time);
 
+// Which file a path names now, as an opaque string: two calls give the same
+// string unless the file was replaced (renamed over, deleted and made again).
+// Empty when it cannot tell, and always on Windows, which never lets a file
+// a program holds open be replaced.
+std::string fileIdentity(const std::filesystem::path& path);
+
 } // namespace asma

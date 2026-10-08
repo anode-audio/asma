@@ -125,7 +125,7 @@ TEST_CASE("LibraryView explains a library it cannot read", "[libview]")
     const auto junk = other.path() / "library.db";
     test::writeBytes(junk, "this is not a database, not even close to one");
     LibraryView broken(junk);
-    CHECK(broken.refresh() == LibraryState::Unreadable);
+    CHECK(broken.refresh() == LibraryState::Damaged); // not a database: rebuilt like a damaged one
 }
 
 TEST_CASE("LibraryView gives up quietly on a library that breaks while open", "[libview]")
@@ -160,7 +160,7 @@ TEST_CASE("LibraryView gives up quietly on a library that breaks while open", "[
 
     CHECK_NOTHROW(view.changed());
     CHECK(view.search({}).empty());
-    CHECK(view.state() == LibraryState::Unreadable);
+    CHECK(view.state() == LibraryState::Damaged);
     CHECK_NOTHROW(view.info(loopId));
     CHECK(view.contentHash(loopId).empty());
     CHECK_NOTHROW(view.infoFor(f.lib / "Loops" / "Bass_Loop_Am_120.wav"));
@@ -184,3 +184,45 @@ TEST_CASE("the standalone updates an older library; a plugin only says so", "[li
     CHECK(standalone.changed());
     CHECK(plugin.refresh() == LibraryState::Open); // the plugin reads the updated library too
 }
+
+TEST_CASE("a damaged library is told apart from one that only cannot be read", "[libview]")
+{
+    Fixture f;
+    f.scan();
+    LibraryView view(f.dbPath);
+    REQUIRE(view.refresh() == LibraryState::Open);
+    {
+        // Garbage in the schema, through another connection, as above.
+        sqlite3* db = nullptr;
+        REQUIRE(sqlite3_open(toUtf8(f.dbPath).c_str(), &db) == SQLITE_OK);
+        const std::string sql = "PRAGMA writable_schema = ON;"
+                                "UPDATE sqlite_master SET sql = 'garbage' WHERE name = 'files';"
+                                "PRAGMA schema_version = 999;";
+        REQUIRE(sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+        sqlite3_close(db);
+    }
+    CHECK(view.search({}).empty());
+    CHECK(view.state() == LibraryState::Damaged);
+    CHECK(view.message() == "The library is damaged. asma is rebuilding it.");
+    CHECK(view.refresh() == LibraryState::Damaged); // still, until it is rebuilt
+}
+
+#ifndef _WIN32 // Windows never lets a file a connection holds be replaced
+TEST_CASE("a library file replaced by a rebuilt one is opened afresh", "[libview]")
+{
+    Fixture f;
+    f.scan();
+    LibraryView view(f.dbPath);
+    REQUIRE(view.refresh() == LibraryState::Open);
+    REQUIRE(view.search({}).size() == 2);
+    const fs::path rebuilt = f.dir.path() / "data" / "rebuilt.db";
+    {
+        Db db = Db::open(rebuilt); // an empty library, as a rebuild starts
+    }
+    fs::rename(f.dbPath, f.dir.path() / "data" / "library.db.corrupt");
+    fs::rename(rebuilt, f.dbPath);
+    view.refresh();
+    CHECK(view.changed());
+    CHECK(view.search({}).empty()); // the new file's rows, not the old one's
+}
+#endif

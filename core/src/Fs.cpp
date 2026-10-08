@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "asma/core/Fs.h"
 
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
+
 #include <cstdlib>
 #include <cstring>
 #include <optional>
@@ -79,6 +83,23 @@ fs::path defaultDataDir()
 std::int64_t fileTimeToInt(fs::file_time_type time)
 {
     return static_cast<std::int64_t>(time.time_since_epoch().count());
+}
+
+} // namespace asma
+
+namespace asma {
+
+std::string fileIdentity(const std::filesystem::path& path)
+{
+#ifdef _WIN32
+    (void)path;
+    return {};
+#else
+    struct stat st {};
+    if (::stat(path.c_str(), &st) != 0) return {};
+    return std::to_string(static_cast<unsigned long long>(st.st_dev)) + ":"
+         + std::to_string(static_cast<unsigned long long>(st.st_ino));
+#endif
 }
 
 } // namespace asma

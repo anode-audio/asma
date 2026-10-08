@@ -15,11 +15,22 @@ LibraryView::~LibraryView() = default;
 
 LibraryState LibraryView::refresh()
 {
-    if (state_ == LibraryState::Open) return state_;
+    if (state_ == LibraryState::Open) {
+        // A rebuilt library replaces the file: follow it to the new one.
+        const std::string now = fileIdentity(path_);
+        if (now.empty() || now == identity_) return state_;
+        watcher_.reset();
+        db_.reset();
+        state_ = LibraryState::Missing;
+    }
     std::error_code ec;
     if (!std::filesystem::exists(path_, ec)) return state_ = LibraryState::Missing;
     try {
+        identity_ = fileIdentity(path_);
         db_.emplace(Db::openReadOnly(path_));
+        // Opening reads only the header: a damaged schema shows at the first
+        // statement, so make one now rather than call the library open.
+        db_->prepare("SELECT id FROM files LIMIT 1").step();
         watcher_ = std::make_unique<ChangeWatcher>(*db_);
         opened_ = true;
         return state_ = LibraryState::Open;
@@ -36,12 +47,22 @@ LibraryState LibraryView::refresh()
                 state_ = LibraryState::Unreadable;
             }
         }
-    } catch (const DbError&) {
-        state_ = LibraryState::Unreadable;
+    } catch (const DbError& e) {
+        close(e.what());
+        return state_;
     }
     watcher_.reset();
     db_.reset();
     return state_;
+}
+
+void LibraryView::close(const std::string& why)
+{
+    watcher_.reset();
+    db_.reset();
+    const bool damaged = why.find("malformed") != std::string::npos || why.find("not a database") != std::string::npos
+                      || why.find("corrupt") != std::string::npos;
+    state_ = damaged ? LibraryState::Damaged : LibraryState::Unreadable;
 }
 
 std::string LibraryView::message() const
@@ -53,6 +74,7 @@ std::string LibraryView::message() const
         return "This library was made by an older asma. Open the asma app once, or run asma scan, to update it.";
     case LibraryState::TooNew: return "This library was made by a newer asma. Update asma to read it.";
     case LibraryState::Unreadable: return "The library file cannot be read: " + toUtf8(path_);
+    case LibraryState::Damaged: return "The library is damaged. asma is rebuilding it.";
     }
     return {};
 }
@@ -63,10 +85,8 @@ Result LibraryView::guarded(Query&& query, Result fallback)
     if (!db_) return fallback;
     try {
         return query();
-    } catch (const std::exception&) {
-        watcher_.reset();
-        db_.reset();
-        state_ = LibraryState::Unreadable;
+    } catch (const std::exception& e) {
+        close(e.what());
         return fallback;
     }
 }

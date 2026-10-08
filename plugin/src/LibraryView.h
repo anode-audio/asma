@@ -22,6 +22,7 @@ enum class LibraryState {
     Outdated,   // an older schema: a writer must open it once to migrate it
     TooNew,     // written by a newer asma
     Unreadable, // not a library, or not readable
+    Damaged,    // SQLite finds it malformed: it is to be rebuilt
 };
 
 // The library as the UI sees it: opened read-only (so it works inside a
@@ -104,8 +105,10 @@ private:
     // refresh() tries to open it again.
     template <typename Query, typename Result>
     Result guarded(Query&& query, Result fallback);
+    void close(const std::string& why); // after an error: Damaged or Unreadable by what it says
 
     std::filesystem::path path_;
+    std::string identity_; // the file the connection is to, to notice it replaced
     Access access_;
     LibraryState state_ = LibraryState::Missing;
     std::optional<Db> db_;
