@@ -3,6 +3,7 @@
 #include "LibraryView.h"
 #include "PluginTestUtil.h"
 #include "ScanJob.h"
+#include "asma/core/Library.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <thread>
@@ -83,10 +84,29 @@ TEST_CASE("the scanner is looked for next to the app", "[scanjob]")
 #endif
 }
 
-TEST_CASE("only the standalone scans", "[scanjob]")
+TEST_CASE("ScanJob scans a folder already in the library, saying which", "[scanjob]")
 {
-    app::AsmaProcessor plugin;
-    CHECK(plugin.scans() == nullptr);
-    app::AsmaProcessor standalone(app::AsmaProcessor::Mode::Standalone);
-    CHECK(standalone.scans() != nullptr);
+    test::LibraryFixture f;
+    f.scan();
+    test::writeWavFloat(f.lib / "Drums" / "Hat_03.wav", 48000, {test::hatHit(48000, 5)});
+    std::int64_t root = 0;
+    {
+        Db db = Db::open(f.dbPath);
+        root = Library(db).roots().front().id;
+    }
+    ScanJob job(f.dbPath, ASMA_SCAN_PATH);
+    CHECK(job.ready());
+    REQUIRE(job.start(root, "Samples"));
+    CHECK(job.progress().rfind("Scanning Samples", 0) == 0);
+    const auto report = finish(job);
+    REQUIRE(report);
+    CHECK(report->index.added == 1);
+    CHECK_FALSE(ScanJob(f.dbPath, f.dir.path() / "no-such-asma-scan").ready());
+}
+
+TEST_CASE("progress counts read with thousands grouped", "[scanjob]")
+{
+    CHECK(app::groupDigits(7) == "7");
+    CHECK(app::groupDigits(1200) == "1,200");
+    CHECK(app::groupDigits(1234567) == "1,234,567");
 }

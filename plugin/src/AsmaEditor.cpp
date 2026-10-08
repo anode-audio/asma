@@ -44,6 +44,7 @@ juce::Font starFont() { return theme::font(theme::Face::Text, 11.0f).withExtraKe
 AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     : juce::AudioProcessorEditor(owner), processor_(owner),
       library_(owner.libraryPath(), owner.isStandalone() ? LibraryView::Access::MayMigrate : LibraryView::Access::ReadOnly),
+      keeper_(LibraryKeeper::shared(owner.libraryPath(), ScanJob::workerNextTo(owner.binary()))),
       top_(owner.isStandalone())
 {
     setLookAndFeel(&lookAndFeel_);
@@ -555,10 +556,9 @@ void AsmaEditor::chooseFolder()
 
 void AsmaEditor::addFolder(const std::filesystem::path& folder)
 {
-    ScanJob* scans = processor_.scans();
-    if (!scans) return;
+    if (!processor_.isStandalone()) return;
     std::string why;
-    scanMessage_ = scans->addAndScan(folder, &why) ? juce::String() : juce::String("Cannot add that folder: ") + why;
+    scanMessage_ = keeper_->addFolder(folder, &why) ? juce::String() : juce::String("Cannot add that folder: ") + why;
     updateReadouts();
 }
 
@@ -596,19 +596,10 @@ void AsmaEditor::poll()
 {
     // A host or preset menu loaded state while the window was open.
     if (processor_.stateLoads() != loadedStates_) loadState();
-    if (ScanJob* scans = processor_.scans())
-        if (const auto report = scans->takeReport()) {
-            using Result = ScanReport::Result;
-            switch (report->result) {
-            case Result::Finished:
-                scanMessage_ = "Scan finished: " + juce::String(report->index.added) + " added";
-                break;
-            case Result::Locked: scanMessage_ = "Another asma is scanning this library; try again when it is done."; break;
-            case Result::Cancelled: scanMessage_ = "Scan cancelled."; break;
-            case Result::Failed:
-            case Result::Crashed: scanMessage_ = "Scan failed: " + juce::String(report->message); break;
-            }
-        }
+    if (keeper_->messageCount() != keeperMessages_) {
+        keeperMessages_ = keeper_->messageCount();
+        scanMessage_ = utf8(keeper_->message());
+    }
     if (browser_.poll()) {
         pending_.libraryChanged();
         table_.updateContent();
@@ -778,8 +769,8 @@ void AsmaEditor::updateReadouts()
     } else {
         footer_.setDrag({});
     }
-    ScanJob* scans = processor_.scans();
-    footer_.setStatus(scans && scans->busy() ? juce::String(scans->progress()) : scanMessage_);
+    const std::string scanning = keeper_->progress();
+    footer_.setStatus(!scanning.empty() ? utf8(scanning) : scanMessage_);
 }
 
 int AsmaEditor::getNumRows() { return browser_.count(); }

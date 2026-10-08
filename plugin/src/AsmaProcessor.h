@@ -3,7 +3,6 @@
 
 #include "LibraryWriter.h"
 #include "PluginState.h"
-#include "ScanJob.h"
 #include "asma/audio/AuditionEngine.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -92,9 +91,8 @@ public:
     void setLinkEnabled(bool on);
     // Proposes a tempo to the Link session (peers may change it again).
     void setLinkTempo(double bpm);
-    // Adding folders and scanning: the standalone only; null in a plugin,
-    // which never writes the library from inside the host.
-    ScanJob* scans() { return scans_.get(); }
+    // The app's or the plugin's own binary, where its helpers sit beside it.
+    const std::filesystem::path& binary() const { return binary_; }
     // What the user adds to the library goes through here: written directly
     // in the standalone, by the asma helper in a plugin.
     LibraryWriter& writer() { return *writer_; }
@@ -108,7 +106,7 @@ private:
     std::atomic<double> hostBpm_{0.0};
     const bool standalone_;
     std::unique_ptr<ableton::Link> link_; // standalone only
-    std::unique_ptr<ScanJob> scans_;      // standalone only
+    std::filesystem::path binary_;
     std::unique_ptr<LibraryWriter> writer_;
     static constexpr double kDefaultBpm = 120.0; // the standalone's tempo until set
     std::atomic<bool> linkOn_{false};

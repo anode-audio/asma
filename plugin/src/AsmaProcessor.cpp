@@ -23,14 +23,9 @@ AsmaProcessor::AsmaProcessor(Mode mode)
     }
     // In a plugin, the plugin's own binary (where JUCE can tell), so the
     // helpers are found inside its bundle.
-    const auto binary = fromUtf8(
-        juce::File::getSpecialLocation(juce::File::currentExecutableFile).getFullPathName().toStdString());
-    if (standalone_) {
-        scans_ = std::make_unique<ScanJob>(libraryPath_, ScanJob::workerNextTo(binary));
-        writer_ = std::make_unique<DirectWriter>(libraryPath_, LibraryWriter::cliNextTo(binary));
-    } else {
-        writer_ = std::make_unique<CliWriter>(libraryPath_, LibraryWriter::cliNextTo(binary));
-    }
+    binary_ = fromUtf8(juce::File::getSpecialLocation(juce::File::currentExecutableFile).getFullPathName().toStdString());
+    if (standalone_) writer_ = std::make_unique<DirectWriter>(libraryPath_, LibraryWriter::cliNextTo(binary_));
+    else writer_ = std::make_unique<CliWriter>(libraryPath_, LibraryWriter::cliNextTo(binary_));
     engine_.loader().start();
 }
 

@@ -2,6 +2,7 @@
 #include "ScanJob.h"
 
 #include "asma/core/Db.h"
+#include "asma/core/Fs.h"
 #include "asma/core/Library.h"
 
 namespace asma::app {
@@ -33,31 +34,34 @@ bool ScanJob::addAndScan(const std::filesystem::path& folder, std::string* error
     } catch (const std::exception& e) {
         return fail(e.what());
     }
+    return start(rootId, toUtf8(folder.filename())) || fail("a scan is already running");
+}
 
+bool ScanJob::start(std::int64_t rootId, const std::string& label)
+{
+    if (busy_.load()) return false;
     if (thread_.joinable()) thread_.join(); // the previous scan, already finished
     busy_.store(true);
-    {
-        const std::lock_guard lock(mutex_);
-        progress_ = "Scanning";
-        report_.reset();
-    }
     std::filesystem::path worker;
     {
         const std::lock_guard lock(mutex_);
+        progress_ = "Scanning " + label;
+        report_.reset();
         worker = worker_;
     }
-    thread_ = std::thread([this, rootId, worker] {
+    thread_ = std::thread([this, rootId, worker, label] {
         ScanRequest request;
         request.worker = worker;
         request.db = dbPath_;
         request.rootId = rootId;
-        const ScanReport report = supervisor_.run(request, [this](const ScanEvent& e) {
+        const ScanReport report = supervisor_.run(request, [this, label](const ScanEvent& e) {
             const char* what = e.kind == ScanEvent::Kind::Progress          ? "Scanning"
                              : e.kind == ScanEvent::Kind::AnalyseProgress ? "Analysing"
                                                                             : nullptr;
             if (!what) return;
             const std::lock_guard lock(mutex_);
-            progress_ = std::string(what) + " " + std::to_string(e.done) + " of " + std::to_string(e.total);
+            progress_ = std::string(what) + " " + label + ": " + groupDigits(static_cast<std::int64_t>(e.done)) + " of "
+                      + groupDigits(static_cast<std::int64_t>(e.total));
         });
         const std::lock_guard lock(mutex_);
         report_ = report;
@@ -65,6 +69,24 @@ bool ScanJob::addAndScan(const std::filesystem::path& folder, std::string* error
         busy_.store(false);
     });
     return true;
+}
+
+bool ScanJob::ready() const
+{
+    std::filesystem::path worker;
+    {
+        const std::lock_guard lock(mutex_);
+        worker = worker_;
+    }
+    std::error_code ec;
+    return std::filesystem::is_regular_file(worker, ec);
+}
+
+std::string groupDigits(std::int64_t n)
+{
+    std::string digits = std::to_string(n < 0 ? -n : n);
+    for (int i = static_cast<int>(digits.size()) - 3; i > 0; i -= 3) digits.insert(static_cast<std::size_t>(i), ",");
+    return (n < 0 ? "-" : "") + digits;
 }
 
 std::string ScanJob::progress() const

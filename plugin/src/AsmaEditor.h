@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Browser.h"
+#include "LibraryKeeper.h"
 #include "LibraryView.h"
 #include "LibraryWriter.h"
 #include "Names.h"
@@ -78,6 +79,9 @@ public:
     void addFolder(const std::filesystem::path& folder);
     // Deletes every kept render; the footer's button asks first.
     void clearRenders();
+    // What keeps the library in step with its folders while this window,
+    // or any other asma window in the process, is open.
+    LibraryKeeper& keeper() { return *keeper_; }
 
     // Organising: the table shows each change at once and the library
     // confirms it; a write that fails rolls back and the footer says why.
@@ -145,6 +149,8 @@ private:
     AsmaProcessor& processor_;
     AsmaLookAndFeel lookAndFeel_; // first in, last out: every child uses it
     LibraryView library_;
+    std::shared_ptr<LibraryKeeper> keeper_;
+    std::uint64_t keeperMessages_ = 0; // the keeper's messages this window has shown
     Browser browser_{library_};
     TopBar top_;
     SidebarView sidebar_;

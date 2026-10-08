@@ -6,6 +6,9 @@
 set -euo pipefail
 
 BUILD=${1:-build}
+# A plugin's window keeps its library in step with its folders; a validator
+# run must not touch the person's own library.
+export ASMA_DATA_DIR="${ASMA_DATA_DIR:-$(mktemp -d)}"
 ART="$BUILD/plugin/asma_plugin_artefacts/Release"
 TOOLS=${TOOLS:-"$BUILD/validators"}
 PLUGINVAL_VERSION=v1.0.4

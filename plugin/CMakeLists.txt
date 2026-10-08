@@ -63,18 +63,16 @@ clap_juce_extensions_plugin(TARGET asma_plugin
   CLAP_ID "com.anodelabs.asma"
   CLAP_FEATURES instrument sampler)
 
-# The standalone runs asma-scan from beside its own executable.
-add_dependencies(asma_plugin_Standalone asma-scan)
-add_custom_command(TARGET asma_plugin_Standalone POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:asma-scan> $<TARGET_FILE_DIR:asma_plugin_Standalone>)
 # Every format writes the library through the asma helper beside its binary
-# (the standalone only for a retry). It goes in as asma-cli: the app's and
-# the bundles' own binaries are called asma.
+# (the standalone only for a retry) and scans through asma-scan beside it.
+# The helper goes in as asma-cli: the app's and the bundles' own binaries are
+# called asma.
 foreach(format Standalone VST3 AU LV2 CLAP)
   if(TARGET asma_plugin_${format})
-    add_dependencies(asma_plugin_${format} asma)
+    add_dependencies(asma_plugin_${format} asma asma-scan)
     add_custom_command(TARGET asma_plugin_${format} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:asma>
-              $<TARGET_FILE_DIR:asma_plugin_${format}>/asma-cli${CMAKE_EXECUTABLE_SUFFIX})
+              $<TARGET_FILE_DIR:asma_plugin_${format}>/asma-cli${CMAKE_EXECUTABLE_SUFFIX}
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:asma-scan> $<TARGET_FILE_DIR:asma_plugin_${format}>)
   endif()
 endforeach()

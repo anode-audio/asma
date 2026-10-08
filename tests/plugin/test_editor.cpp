@@ -131,12 +131,14 @@ TEST_CASE("the standalone adds a folder and shows the scan in the table", "[edit
     const auto more = rig.f.dir.path() / "More";
     test::writeWavFloat(more / "Pad_Cm.wav", 48000, {test::sine(261.6, 1.0, 0.3, 48000)});
     // The app would find asma-scan beside itself; the test points at the build's.
-    rig.p->scans()->setWorker(ASMA_SCAN_PATH);
+    dynamic_cast<app::ScanJob&>(rig.editor->keeper().runner()).setWorker(ASMA_SCAN_PATH);
     rig.editor->addFolder(more);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    while (rig.p->scans()->busy() && std::chrono::steady_clock::now() < deadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    rig.editor->poll();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    // The row shows once the scan has indexed it; the news once it is done.
+    while (!rig.editor->footer().rightText().contains("Scan finished") && std::chrono::steady_clock::now() < deadline) {
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50); // the keeper's timer
+        rig.editor->poll();
+    }
     CHECK(rig.editor->footer().rightText().contains("Scan finished: 1 added"));
     CHECK(rig.editor->table().getNumRows() == 4);
 }
