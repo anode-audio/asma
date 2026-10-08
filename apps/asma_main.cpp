@@ -7,18 +7,22 @@
 #include "asma/audio/Render.h"
 #include "asma/audio/Sync.h"
 #include "asma/core/Analyser.h"
+#include "asma/core/Backup.h"
 #include "asma/core/Db.h"
 #include "asma/core/Fs.h"
 #include "asma/core/Json.h"
 #include "asma/core/Library.h"
 #include "asma/core/NameParse.h"
 #include "asma/core/Query.h"
+#include "asma/core/Repair.h"
 #include "asma/core/Scanner.h"
 #include "asma/core/Similar.h"
 #include "asma/core/WriterLock.h"
 
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <iostream>
 #include <string>
 
@@ -49,6 +53,10 @@ constexpr const char* kUsageText =
     "         [--tempo BPM] [--key K] [--transpose N] [--rate HZ] [--renders DIR]\n"
     "                          print the file to drag, rendering edits if any\n"
     "  renders [clear] [--renders DIR]   size of the kept renders, or delete them\n"
+    "  check                   is the library sound? (JSON)\n"
+    "  backup [--out FILE]     write the user data beside the library, or to FILE\n"
+    "  restore FILE            give the library a backup's user data\n"
+    "  repair                  rebuild a damaged library from its backup (JSON)\n"
     "  --version\n";
 
 // One line per row: TSV (path, bpm, key, type, duration[, similarity]) or JSON,
@@ -263,6 +271,75 @@ int cmdRenders(Args& args, Db&)
     return kOk;
 }
 
+// FILE-previous.json for FILE.json: where the backup before goes.
+std::filesystem::path previousOf(const std::filesystem::path& file)
+{
+    return file.parent_path() / (toUtf8(file.stem()) + "-previous" + toUtf8(file.extension()));
+}
+
+int cmdCheck(Args& args, const std::filesystem::path& dbPath)
+{
+    rejectLeftovers(args);
+    const HealthReport r = checkLibrary(dbPath);
+    const char* health = r.health == LibraryHealth::Ok        ? "ok"
+                       : r.health == LibraryHealth::Missing   ? "missing"
+                       : r.health == LibraryHealth::Damaged   ? "damaged"
+                                                              : "unreadable";
+    JsonLine line;
+    line.str("health", health);
+    if (!r.detail.empty()) line.str("detail", r.detail);
+    std::cout << line.build() << "\n";
+    return kOk;
+}
+
+int cmdRepair(Args& args, const std::filesystem::path& dbPath)
+{
+    rejectLeftovers(args);
+    const RepairReport r = repairLibrary(dbPath, dbPath.parent_path() / "backup.json");
+    JsonLine line;
+    using Result = RepairReport::Result;
+    switch (r.result) {
+    case Result::Healthy: line.str("result", "healthy"); break;
+    case Result::Locked: line.str("result", "locked"); break;
+    case Result::InUse: line.str("result", "in_use").str("detail", r.detail); break;
+    case Result::Repaired:
+        line.str("result", "repaired")
+            .str("moved_to", toUtf8(r.movedTo))
+            .num("folders", static_cast<std::int64_t>(r.folders))
+            .str("written", r.backupWrittenAt)
+            .num("files", static_cast<std::int64_t>(r.restored.files))
+            .num("unmatched", static_cast<std::int64_t>(r.restored.unmatched));
+        break;
+    }
+    std::cout << line.build() << "\n";
+    if (r.result == Result::Locked) return kLocked;
+    return r.result == Result::InUse ? kError : kOk;
+}
+
+int cmdBackup(Args& args, Db& db, const std::filesystem::path& dbPath)
+{
+    const auto out = args.option("out");
+    rejectLeftovers(args);
+    const std::filesystem::path file = out ? fromUtf8(*out) : dbPath.parent_path() / "backup.json";
+    writeBackup(db, file, previousOf(file));
+    return kOk;
+}
+
+int cmdRestore(Args& args, Db& db)
+{
+    const auto file = args.positional();
+    rejectLeftovers(args);
+    if (!file) throw UsageError("restore needs a backup file");
+    std::ifstream in(fromUtf8(*file), std::ios::binary);
+    if (!in) throw std::runtime_error("cannot read " + *file);
+    std::stringstream text;
+    text << in.rdbuf();
+    const RestoreStats r = restoreBackup(db, text.str());
+    std::cout << "restored " << r.files << " organised samples, " << r.unmatched << " not found, " << r.collections
+              << " collections, " << r.searches << " saved searches\n";
+    return kOk;
+}
+
 int cmdQuery(Args& args, Db& db)
 {
     const bool json = args.flag("json");
@@ -303,10 +380,19 @@ int main(int argc, char** argv)
             {"search", cmdSearch},
             {"render", cmdRender},
             {"renders", cmdRenders},
+            {"restore", cmdRestore},
         };
         if (*command == "scan") {
             Db db = Db::open(dbPath);
             return cmdScan(args, db, dbPath);
+        }
+        // The check and the repair must not open the library as a writer
+        // first: a damaged one would fail before they could look.
+        if (*command == "check") return cmdCheck(args, dbPath);
+        if (*command == "repair") return cmdRepair(args, dbPath);
+        if (*command == "backup") {
+            Db db = Db::open(dbPath);
+            return cmdBackup(args, db, dbPath);
         }
         if (*command == "retry") {
             Db db = Db::open(dbPath);

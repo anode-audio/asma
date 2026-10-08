@@ -419,3 +419,72 @@ TEST_CASE("asma render prints the file to drag", "[e2e]")
     CHECK(cli.runAsma("renders" + cache).out == "0 renders, 0 MB\n");
     CHECK(cli.runAsma("renders shrink" + cache).exitCode == 2);
 }
+
+namespace {
+
+// Overwrites a closed library's pages after the first, as a disk fault would.
+void damage(const fs::path& db)
+{
+    std::fstream f(db, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(4096);
+    const std::string junk(4096 * 3, '\xA5');
+    f.write(junk.data(), static_cast<std::streamsize>(junk.size()));
+}
+
+} // namespace
+
+TEST_CASE("check, backup, restore and repair from the CLI", "[e2e][safety]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
+    const auto loop = quote(cli.lib / "Loops" / "Bass_Loop_Am_128.wav");
+    REQUIRE(cli.runAsma("rate 4 " + loop).exitCode == 0);
+
+    CHECK(cli.runAsma("check").out == "{\"health\":\"ok\"}\n");
+    const RunResult backup = cli.runAsma("backup");
+    CHECK(backup.exitCode == 0);
+    const fs::path data = cli.db.parent_path();
+    CHECK(fs::exists(data / "backup.json"));
+    CHECK(cli.runAsma("backup").exitCode == 0);
+    CHECK(fs::exists(data / "backup-previous.json"));
+    CHECK(cli.runAsma("backup --out " + quote(cli.dir.path() / "mine.json")).exitCode == 0);
+    CHECK(fs::exists(cli.dir.path() / "mine.json"));
+
+    CHECK(cli.runAsma("repair").out == "{\"result\":\"healthy\"}\n"); // a sound library stays
+
+    damage(cli.db);
+    CHECK(cli.runAsma("check").out.rfind("{\"health\":\"damaged\"", 0) == 0);
+    const RunResult repaired = cli.runAsma("repair");
+    CHECK(repaired.exitCode == 0);
+    CHECK(repaired.out.rfind("{\"result\":\"repaired\"", 0) == 0);
+    CHECK(repaired.out.find("\"files\":1,\"unmatched\":0") != std::string::npos);
+    CHECK(fs::exists(data / "library.db.corrupt"));
+    CHECK(cli.runAsma("query --min-rating 4").out.find("Bass_Loop") != std::string::npos);
+
+    REQUIRE(cli.runAsma("rate 0 " + loop).exitCode == 0);
+    const RunResult restored = cli.runAsma("restore " + quote(cli.dir.path() / "mine.json"));
+    CHECK(restored.exitCode == 0);
+    CHECK(restored.out == "restored 1 organised samples, 0 not found, 0 collections, 0 saved searches\n");
+    CHECK(cli.runAsma("query --min-rating 4").out.find("Bass_Loop") != std::string::npos);
+    CHECK(cli.runAsma("restore " + quote(cli.dir.path() / "nothing.json")).exitCode == 1);
+}
+
+TEST_CASE("two repairs at once on a damaged library: one rebuilds, the other waits its turn", "[e2e][safety]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
+    REQUIRE(cli.runAsma("backup").exitCode == 0);
+    damage(cli.db);
+    // The second finds the lock taken, or, coming after, a sound library.
+    auto lock = std::make_unique<std::optional<asma::WriterLock>>(asma::WriterLock::tryAcquire(cli.db.parent_path()));
+    REQUIRE(lock->has_value());
+    const RunResult refused = cli.runAsma("repair");
+    CHECK(refused.exitCode == 3);
+    CHECK(refused.out == "{\"result\":\"locked\"}\n");
+    CHECK_FALSE(fs::exists(cli.db.parent_path() / "library.db.corrupt"));
+    lock.reset();
+    CHECK(cli.runAsma("repair").out.rfind("{\"result\":\"repaired\"", 0) == 0);
+    CHECK(cli.runAsma("repair").out == "{\"result\":\"healthy\"}\n");
+}
