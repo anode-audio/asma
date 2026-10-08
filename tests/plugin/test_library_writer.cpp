@@ -3,6 +3,7 @@
 #include "LibraryFixture.h"
 #include "LibraryWriter.h"
 #include "asma/core/Fs.h"
+#include "asma/core/Scanner.h"
 #include "asma/core/WriterLock.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -311,3 +312,27 @@ TEST_CASE("a lane gone before its outcome is delivered delivers nothing", "[writ
     juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     CHECK_FALSE(delivered);
 }
+
+#ifndef _WIN32 // Windows never lets a file a connection holds be replaced
+TEST_CASE("after a rebuild the standalone writes to the new library, not the one moved aside", "[writer]")
+{
+    test::LibraryFixture f;
+    f.scan();
+    const juce::ScopedJuceInitialiser_GUI gui;
+    DirectWriter writer(f.dbPath, ASMA_CLI_PATH);
+    writer.write(Write::rate(idOf(f.dbPath, f.loop), 2)); // the writer's connection is open now
+    // A rebuild puts a new library where the old one was.
+    const fs::path rebuilt = f.dir.path() / "data" / "rebuilt.db";
+    {
+        Db db = Db::open(rebuilt);
+        Library lib(db);
+        scanRoot(db, lib.addRoot(f.lib));
+    }
+    fs::rename(f.dbPath, f.dir.path() / "data" / "library.db.corrupt");
+    fs::rename(rebuilt, f.dbPath);
+    std::string error;
+    writer.write(Write::rate(idOf(f.dbPath, f.loop), 5), [&](const std::string& e) { error = e; });
+    CHECK(error.empty());
+    CHECK(userData(f.dbPath).rfind("ratings: (Loops/Bass_Loop_Am_120.wav,5)\n", 0) == 0);
+}
+#endif

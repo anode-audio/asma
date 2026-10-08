@@ -389,7 +389,13 @@ void DirectWriter::write(const Write& w, WriteDone done)
 {
     std::string error;
     try {
-        if (!db_) db_ = Db::open(dbPath_);
+        // A rebuilt library replaces the file: a connection still on the
+        // old one would write where nobody reads, so open the new one.
+        if (db_ && fileIdentity(dbPath_) != identity_) db_.reset();
+        if (!db_) {
+            identity_ = fileIdentity(dbPath_);
+            db_ = Db::open(dbPath_);
+        }
         apply(*db_, w);
     } catch (const std::exception& e) {
         db_.reset(); // a broken connection is not kept for the next write

@@ -128,6 +128,8 @@ public:
     virtual void setCli(std::filesystem::path cli);
     // Nothing queued or running.
     virtual bool idle() const;
+    // Lets go of any connection to the library file this process holds.
+    virtual void release() {}
 
     // Where the app and the plugins ship the helper: beside their own binary,
     // as asma-cli (their own binaries are called asma).
@@ -147,8 +149,12 @@ public:
     // calls `done` before returning.
     void write(const Write& write, WriteDone done = {}) override;
 
+    // Lets go of the library file (a rebuild is about to move it).
+    void release() override { db_.reset(); }
+
 private:
-    std::optional<Db> db_; // opened on the first write, dropped after an error
+    std::optional<Db> db_;  // opened on the first write, dropped after an error
+    std::string identity_;  // the file db_ is to: a rebuilt library is a new one
 };
 
 class CliWriter final : public LibraryWriter {
