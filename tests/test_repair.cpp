@@ -140,3 +140,21 @@ TEST_CASE("repair waits its turn: with another writer holding the lock it moves 
     CHECK(r.result == RepairReport::Result::Locked);
     CHECK_FALSE(fs::exists(d.dir.path() / "data" / "library.db.corrupt"));
 }
+
+TEST_CASE("a rebuild cut short leaves the damaged library in place to be rebuilt again", "[repair]")
+{
+    Data d;
+    d.writeTheBackup();
+    d.damage();
+    ScanOptions crash;
+    crash.threads = 1; // on the calling thread, so the throw comes back out
+    crash.onFileStart = [](std::string_view) { throw std::runtime_error("stands in for the helper being killed"); };
+    CHECK_THROWS(repairLibrary(d.dbPath, d.backup, crash));
+    // Nothing looks sound that is not: the next start finds the damage again.
+    CHECK(checkLibrary(d.dbPath).health == LibraryHealth::Damaged);
+    CHECK_FALSE(fs::exists(d.dir.path() / "data" / "library.db.corrupt"));
+    const RepairReport r = repairLibrary(d.dbPath, d.backup); // a leftover half-rebuild is no obstacle
+    CHECK(r.result == RepairReport::Result::Repaired);
+    CHECK(d.kickRating() == 5);
+    CHECK_FALSE(fs::exists(d.dir.path() / "data" / "library.db.rebuild"));
+}

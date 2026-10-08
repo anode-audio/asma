@@ -105,9 +105,40 @@ RepairReport repairLibrary(const fs::path& dbPath, const fs::path& backup, const
     std::vector<std::string> folders = backupFolders(backupText);
     if (folders.empty()) folders = foldersOf(dbPath);
 
-    // Move it aside, deleting nothing; its -wal and -shm go with it.
-    const fs::path aside = asideName(dbPath);
+    // Build the new library beside it first, so a rebuild cut short (the
+    // helper killed, a crash) leaves the damaged one in place to be found and
+    // rebuilt again, never a library that looks sound without the user's data.
+    fs::path rebuild = dbPath;
+    rebuild += ".rebuild";
     std::error_code ec;
+    for (const char* suffix : {"", "-wal", "-shm"}) { // what a rebuild cut short left
+        fs::path leftover = rebuild;
+        leftover += suffix;
+        fs::remove(leftover, ec);
+    }
+    {
+        Db db = Db::open(rebuild);
+        Library lib(db);
+        std::vector<std::int64_t> roots;
+        for (const auto& f : folders) {
+            Transaction tx(db);
+            roots.push_back(lib.addRoot(fromUtf8(f)));
+            tx.commit();
+        }
+        report.folders = roots.size();
+        for (const auto id : roots) {
+            std::error_code missing;
+            if (fs::is_directory(fromUtf8(lib.root(id)->path), missing)) scanRoot(db, id, scan);
+        }
+        if (!backupWrittenAt(backupText).empty()) {
+            report.restored = restoreBackup(db, backupText);
+            report.backupWrittenAt = backupWrittenAt(backupText);
+        }
+    } // closed: its WAL is in the file now
+
+    // Then the damaged one aside, deleting nothing (its -wal and -shm go with
+    // it), and the new one in its place.
+    const fs::path aside = asideName(dbPath);
     fs::rename(dbPath, aside, ec);
     if (ec) {
         report.result = RepairReport::Result::InUse;
@@ -121,24 +152,7 @@ RepairReport repairLibrary(const fs::path& dbPath, const fs::path& backup, const
         if (fs::exists(from, ec)) fs::rename(from, to, ec);
     }
     report.movedTo = aside;
-
-    Db db = Db::open(dbPath);
-    Library lib(db);
-    std::vector<std::int64_t> roots;
-    for (const auto& f : folders) {
-        Transaction tx(db);
-        roots.push_back(lib.addRoot(fromUtf8(f)));
-        tx.commit();
-    }
-    report.folders = roots.size();
-    for (const auto id : roots) {
-        std::error_code missing;
-        if (fs::is_directory(fromUtf8(lib.root(id)->path), missing)) scanRoot(db, id, scan);
-    }
-    if (!backupWrittenAt(backupText).empty()) {
-        report.restored = restoreBackup(db, backupText);
-        report.backupWrittenAt = backupWrittenAt(backupText);
-    }
+    fs::rename(rebuild, dbPath);
     report.result = RepairReport::Result::Repaired;
     return report;
 }

@@ -43,11 +43,13 @@ struct RepairReport {
 };
 
 // Rebuilds a damaged library. Takes the writer lock and checks again, so a
-// sound library is never moved. Moves library.db and its -wal and -shm to
-// library.db.corrupt (with the date and time when that exists; nothing is
-// deleted), makes a new library with the backup's folders (or those the
-// damaged file still yields), scans them without analysis (the next scan
-// does that) and restores the backup at `backup`, when there is one.
+// sound library is never moved. Builds a new library as library.db.rebuild
+// with the backup's folders (or those the damaged file still yields), scans
+// them without analysis (the next scan does that) and restores the backup at
+// `backup`, when there is one; only then moves library.db and its -wal and
+// -shm to library.db.corrupt (with the date and time when that exists;
+// nothing is deleted) and the new library into its place. A rebuild cut short
+// leaves the damaged library where it was, to be rebuilt again.
 RepairReport repairLibrary(const std::filesystem::path& dbPath, const std::filesystem::path& backup,
                            const ScanOptions& scan = {});
 
