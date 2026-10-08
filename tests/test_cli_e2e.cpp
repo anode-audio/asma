@@ -306,7 +306,9 @@ TEST_CASE("search save takes the app's JSON, and saved searches rename", "[e2e]"
     REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
 
 #ifdef _WIN32
-    const std::string json = "\"{\"\"v\"\":1,\"\"sort\"\":\"\"bpm\"\",\"\"desc\"\":true}\"";
+    // CommandLineToArgvW reads \" inside quotes as a quote; cmd.exe leaves
+    // it alone, since JSON holds none of its special characters.
+    const std::string json = "\"{\\\"v\\\":1,\\\"sort\\\":\\\"bpm\\\",\\\"desc\\\":true}\"";
 #else
     const std::string json = "'{\"v\":1,\"sort\":\"bpm\",\"desc\":true}'";
 #endif
