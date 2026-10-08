@@ -81,6 +81,9 @@ support, speed, and crash isolation.
   in the standalone.
 - **Formats:** read WAV, AIFF, FLAC, OGG, MP3; write WAV, AIFF, FLAC.
 
+- **After plan 4:** following YouTube playlists through the system's yt-dlp, and
+  processing new tracks into stems and drum one-shots (section 15).
+
 ### Out of v1
 
 Cloud stores and accounts, ML tagging or embeddings, slicing loops to MIDI,
@@ -653,3 +656,92 @@ core, the audio engine, the CLI and the scanner build without JUCE.
   audio or music software.
 - Create `anode-audio/asma` on GitHub, then register it in the umbrella
   `scripts/repos.sh` and the product list in the umbrella `CLAUDE.md`.
+
+## 15. Playlists and processing (between plan 4 and plan 5)
+
+asma follows YouTube playlists the user chooses, fetches new videos' audio as
+FLAC through the `yt-dlp` already on the system, and processes each new track
+into stems and drum one-shots, all landing in folders the watcher indexes. It
+comes in four parts, each with its own plan and merge, in this order, after plan
+4 (file manager) and before plan 5 (packaging):
+
+1. **Playlist follower** (designed below).
+2. **Processing pipeline:** resumable stages per new track, each skipped when
+   its outputs exist, in a helper process; results beside the track as
+   `<track>/stems/…` and `<track>/oneshots/…`.
+3. **One-shot slicer:** drum hits sliced from a drum stem in C++: onset
+   detection, starts anchored on the transient, tail cuts, and quality gates
+   (crest factor, spectral flatness, isolation from the rest of the mix, decay,
+   a floor below the loudest hit). Useful on any drum stem before part 4.
+4. **Built-in stem separation (last):** a mix into vocals, drums, bass, guitar,
+   piano and other; drums into kick, snare, toms, hi-hat, ride and crash; vocals
+   into lead and backing; through ONNX Runtime in C++ (CPU, Core ML, DirectML),
+   models downloaded on first use and checked. Before its design: the models'
+   licences must allow a GPLv3 app to download and run them, and exporting
+   Roformer models to ONNX may need a spike.
+
+### Playlist follower (part 1)
+
+- **Scope:** public and unlisted playlists only. asma never handles a login and
+  never passes browser cookies; a private playlist is refused with "This
+  playlist is private; make it unlisted to follow it."
+- **Data:** a `playlists` table (a schema migration): the URL (unique), its
+  title, its folder (a library root), when it was last checked and the last
+  error. The videos already fetched are yt-dlp's own download archive, at
+  `playlists/<id>.archive` in the data directory.
+- **Commands:** `asma playlist add URL [--folder DIR]` asks yt-dlp for the
+  playlist's title without downloading (which also tells a playlist from
+  anything else), makes the folder (default `~/Music/asma/YouTube/<title>`, the
+  title made safe as a file name), adds it to the library and records the
+  playlist; adding the same URL again is refused. `asma playlist list`;
+  `asma playlist remove` stops following and leaves the folder and its files.
+  `asma playlist check [--id N]` runs yt-dlp on each playlist
+  (`-x --audio-format flac --download-archive <archive>`, with a progress
+  template) and prints JSON lines: found N new, downloading k of N with the
+  title and its progress, done, failed and why.
+- **Downloading:** into a hidden staging folder inside the playlist's folder,
+  which the watcher ignores, each finished FLAC then moved into place as
+  `<title> [<video id>].flac`, so the watcher only ever sees whole files. A
+  title is made safe as a file name and cut to fit. A video removed from the
+  playlist keeps its file; the same video in two playlists is fetched into each.
+  A check cut short leaves part files in the staging folder, which the next
+  check clears.
+- **Honest about quality:** YouTube's audio is lossy (Opus or AAC); the FLAC
+  keeps it intact without a second lossy step, and asma never presents it as
+  lossless audio.
+- **When:** while any asma window is open, the keeper runs `asma playlist check`
+  through the helper at startup, every 6 hours, and on "Check now", one playlist
+  at a time. A plugin does this through `asma-cli`, as every write; nothing
+  downloads inside a host.
+- **Finding the tools:** `yt-dlp` and `ffmpeg` on the PATH and in the usual
+  places (`/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, WinGet's links
+  folder on Windows; apps started from the macOS Finder do not get the shell's
+  PATH), overridden by `ASMA_YTDLP` and `ASMA_FFMPEG`. asma never downloads or
+  updates yt-dlp.
+- **UI:** "Follow a playlist…" beside "Add folder…" in the app, and in the
+  sidebar's "+" menu in a plugin, opens a popover with the URL and the folder
+  (its default shown, "Choose…" to change it); Follow checks the URL through the
+  helper, shows the title and starts the first check; a bad or private URL is
+  refused in red in the popover. A playlist's folder stays under FOLDERS,
+  marked, with a count of new downloads since it was last looked at;
+  right-clicking it gives "Check now" and "Stop following…" (which says the
+  files stay). The footer says "Checking 2 playlists…", "Downloading 2 of 5:
+  <title>" and "3 new from <playlist>". With `yt-dlp` or `ffmpeg` missing, the
+  popover says which and how to get it (`brew install yt-dlp`, `winget install
+  yt-dlp`, the Linux package manager), with "Look again".
+- **Errors:** a failed check (network, yt-dlp out of date, the playlist gone)
+  keeps yt-dlp's message on the playlist, shown in red in the sidebar with
+  "updating yt-dlp often fixes this", until a check succeeds; it is tried again
+  at the next check, never in a loop. A video that fails on its own (blocked,
+  removed, age-restricted) is retried at later checks; after three failures it
+  is listed under Problems with yt-dlp's reason. A playlist whose folder was
+  deleted is not fetched into until the folder is back or chosen again.
+- **Testing:** a fake yt-dlp (the test helper binary, through `ASMA_YTDLP`)
+  plays a playlist of three, a new video, a private playlist, a single video
+  instead of a playlist, a failing video, a download cut short and "out of
+  date"; the tests never reach YouTube. They check whole FLACs with safe names,
+  nothing fetched twice, failures recorded and retried, a third failure in
+  Problems, remove keeping the files, the JSON progress reaching the footer,
+  finding the tools, the migration, and the popover and sidebar. One hand test
+  follows a real public playlist, since only YouTube shows whether yt-dlp still
+  behaves as expected.
