@@ -597,6 +597,13 @@ void AsmaEditor::poll()
 {
     // A host or preset menu loaded state while the window was open.
     if (processor_.stateLoads() != loadedStates_) loadState();
+    // A rebuild under way: let go of the library file, so it can be moved
+    // (Windows will not move a file a connection holds). Damage this window
+    // met goes to the keeper, which rebuilds.
+    const bool rebuilding = keeper_->rebuilding();
+    library_.suspend(rebuilding);
+    if (rebuilding) processor_.writer().release();
+    if (library_.takeDamage()) keeper_->reportDamage();
     if (keeper_->messageCount() != keeperMessages_) {
         keeperMessages_ = keeper_->messageCount();
         scanMessage_ = utf8(keeper_->message());

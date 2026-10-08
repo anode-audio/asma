@@ -5,6 +5,7 @@
 #include "asma/core/Fs.h"
 #include "asma/core/Library.h"
 #include "asma/core/UserData.h"
+#include "asma/core/WriterLock.h"
 
 #include <fstream>
 #include <sqlite3.h>
@@ -288,4 +289,65 @@ TEST_CASE("the backup's day reads as a person would say it", "[keeper]")
     CHECK(app::backupDay("2027-01-31T23:59:59Z") == "31 January");
     CHECK(app::backupDay("").empty());
     CHECK(app::backupDay("yesterday").empty());
+}
+
+TEST_CASE("damage found at startup but refused by the lock is rebuilt once the lock is free", "[keeper][safety]")
+{
+    KeeperRig rig;
+    backupOn7October(rig.f);
+    damage(rig.f.dbPath);
+    {
+        auto lock = WriterLock::tryAcquire(rig.f.dbPath.parent_path()); // another asma, scanning
+        REQUIRE(lock);
+        settle(*rig.keeper, rig.t0);
+        settle(*rig.keeper, rig.t0 + 1s);
+        CHECK_FALSE(fs::exists(rig.f.dbPath.parent_path() / "library.db.corrupt"));
+    }
+    settle(*rig.keeper, rig.t0 + 31s); // the retry
+    settle(*rig.keeper, rig.t0 + 32s);
+    CHECK(fs::exists(rig.f.dbPath.parent_path() / "library.db.corrupt"));
+    CHECK(rig.keeper->message().rfind("The library was damaged and has been rebuilt", 0) == 0);
+}
+
+TEST_CASE("damage a window meets is reported to the keeper and rebuilt", "[keeper][safety]")
+{
+    KeeperRig rig;
+    backupOn7October(rig.f);
+    settle(*rig.keeper, rig.t0); // checked: sound
+    damage(rig.f.dbPath);        // pages the keeper's own reads may never touch
+    rig.keeper->reportDamage();  // an editor's search met them
+    settle(*rig.keeper, rig.t0 + 1s);
+    settle(*rig.keeper, rig.t0 + 2s);
+    CHECK(fs::exists(rig.f.dbPath.parent_path() / "library.db.corrupt"));
+}
+
+TEST_CASE("damage reported but not confirmed is not tried again at once", "[keeper][safety]")
+{
+    KeeperRig rig;
+    settle(*rig.keeper, rig.t0);
+    rig.keeper->reportDamage(); // a sound library: the repair finds nothing to do
+    settle(*rig.keeper, rig.t0 + 1s);
+    CHECK(rig.keeper->settled());
+    rig.keeper->reportDamage();
+    rig.keeper->tick(rig.t0 + 2s);
+    CHECK_FALSE(rig.keeper->rebuilding()); // backed off: no second repair yet
+    CHECK_FALSE(fs::exists(rig.f.dbPath.parent_path() / "library.db.corrupt"));
+}
+
+TEST_CASE("while the library is rebuilt every window lets go of it and says why", "[keeper][safety]")
+{
+    test::EditorRig rig(app::AsmaProcessor::Mode::Standalone);
+    rig.editor->keeper().setCli(ASMA_CLI_PATH);
+    rig.p->writer().write(app::Write::rate(1, 3)); // the standalone's writer holds the file
+    rig.editor->keeper().reportDamage();
+    // After the startup check the keeper lets go first and only then starts
+    // the rebuild; the window follows at its next look.
+    const auto deadline = std::chrono::steady_clock::now() + 20s;
+    while (!rig.editor->keeper().rebuilding() && std::chrono::steady_clock::now() < deadline) {
+        rig.editor->keeper().tick(app::LibraryKeeper::Clock::now());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+    }
+    REQUIRE(rig.editor->keeper().rebuilding());
+    rig.editor->poll();
+    CHECK(rig.editor->emptyText() == "The library is damaged. asma is rebuilding it.");
 }

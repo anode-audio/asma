@@ -60,6 +60,17 @@ public:
     // True once when the library has just opened, and after another process
     // commits to it.
     bool changed();
+    // Whether a read met damage since the last call: kept until taken, so
+    // the keeper hears of it whatever the state did after.
+    bool takeDamage()
+    {
+        const bool seen = damageSeen_;
+        damageSeen_ = false;
+        return seen;
+    }
+    // While a rebuild runs: lets go of the file (Windows will not move a file
+    // a connection holds) and opens nothing until resumed.
+    void suspend(bool on);
 
     // Empty unless open.
     std::vector<SearchRow> search(const SearchModel& model);
@@ -114,6 +125,8 @@ private:
     std::optional<Db> db_;
     std::unique_ptr<ChangeWatcher> watcher_;
     bool opened_ = false; // reported by the next changed()
+    bool damageSeen_ = false;
+    bool suspended_ = false;
 };
 
 } // namespace asma::app

@@ -226,3 +226,29 @@ TEST_CASE("a library file replaced by a rebuilt one is opened afresh", "[libview
     CHECK(view.search({}).empty()); // the new file's rows, not the old one's
 }
 #endif
+
+TEST_CASE("damage the view meets stays reported until taken, and a suspended view lets go of the file", "[libview]")
+{
+    Fixture f;
+    f.scan();
+    LibraryView view(f.dbPath);
+    REQUIRE(view.refresh() == LibraryState::Open);
+    CHECK_FALSE(view.takeDamage());
+    {
+        sqlite3* db = nullptr;
+        REQUIRE(sqlite3_open(toUtf8(f.dbPath).c_str(), &db) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(db, "PRAGMA writable_schema = ON; UPDATE sqlite_master SET sql = 'garbage' "
+                                 "WHERE name = 'files'; PRAGMA schema_version = 999;",
+                             nullptr, nullptr, nullptr) == SQLITE_OK);
+        sqlite3_close(db);
+    }
+    view.search({});
+    view.refresh(); // whatever the state does next, the damage was seen
+    CHECK(view.takeDamage());
+    CHECK_FALSE(view.takeDamage()); // taken
+
+    view.suspend(true);
+    CHECK(view.refresh() == LibraryState::Damaged); // not even trying while a rebuild runs
+    CHECK(view.search({}).empty());
+    view.suspend(false);
+}

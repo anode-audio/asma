@@ -45,8 +45,15 @@ public:
                                                  const std::filesystem::path& cli);
     // Where the asma helper is; takes effect from the next command.
     void setCli(std::filesystem::path cli) { helper_.setCli(std::move(cli)); }
-    // Nothing being checked, rebuilt or backed up.
-    bool settled() const { return safety_ == Safety::Idle && helper_.idle(); }
+    // A window's read met damage: rebuild, as for damage the check finds.
+    void reportDamage() { damageSuspected_ = true; }
+    // A rebuild is under way: every window lets go of the library file.
+    bool rebuilding() const { return safety_ == Safety::Repairing; }
+    // Nothing being checked, rebuilt or backed up, and no rebuild due.
+    bool settled() const
+    {
+        return safety_ == Safety::Idle && helper_.idle() && !(damageSuspected_ && lastTick_ >= retryAt_);
+    }
 
     // The standalone's Add folder: adds it to the library and scans it next.
     bool addFolder(const std::filesystem::path& folder, std::string* error = nullptr);
@@ -67,7 +74,8 @@ private:
     void readFolders(Clock::time_point now);
     void finished(const ScanReport& report);
     void keepSafe(Clock::time_point now);
-    void repair();
+    void startRepair(Clock::time_point now);
+    void launchRepair();
     void tell(std::string news);
 
     const std::filesystem::path dbPath_;
@@ -81,7 +89,13 @@ private:
     std::uint64_t messages_ = 0;
     enum class Safety { Unchecked, Checking, Repairing, Idle };
     Safety safety_ = Safety::Unchecked;
-    Clock::time_point retryAt_{};        // a repair or backup that could not run is tried again then
+    Clock::time_point retryAt_{};        // the next rebuild may start then (backing off)
+    std::chrono::seconds backoff_{30};
+    Clock::time_point lastTick_{};
+    bool damageSuspected_ = false;       // until a rebuild, or a check, says otherwise
+    bool repairLaunched_ = false;
+    int letGoTicks_ = 0;                 // ticks given to the windows to let go of the file
+    bool waitTold_ = false;              // "waiting for other windows" said for this damage
     Clock::time_point backupCheckAt_{};  // when to look at the backup's age again
     std::filesystem::path backupPath_;
     CliLane helper_;

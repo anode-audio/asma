@@ -13,8 +13,19 @@ LibraryView::LibraryView(std::filesystem::path dbPath, Access access) : path_(st
 
 LibraryView::~LibraryView() = default;
 
+void LibraryView::suspend(bool on)
+{
+    if (on == suspended_) return;
+    suspended_ = on;
+    if (!on) return; // the next refresh opens it again
+    watcher_.reset();
+    db_.reset();
+    state_ = LibraryState::Damaged;
+}
+
 LibraryState LibraryView::refresh()
 {
+    if (suspended_) return state_ = LibraryState::Damaged;
     if (state_ == LibraryState::Open) {
         // A rebuilt library replaces the file: follow it to the new one.
         const std::string now = fileIdentity(path_);
@@ -63,6 +74,7 @@ void LibraryView::close(const std::string& why)
     const bool damaged = why.find("malformed") != std::string::npos || why.find("not a database") != std::string::npos
                       || why.find("corrupt") != std::string::npos;
     state_ = damaged ? LibraryState::Damaged : LibraryState::Unreadable;
+    damageSeen_ = damageSeen_ || damaged;
 }
 
 std::string LibraryView::message() const

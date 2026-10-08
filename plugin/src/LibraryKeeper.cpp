@@ -10,7 +10,9 @@ namespace asma::app {
 namespace {
 
 constexpr int kTickMs = 500;
-constexpr auto kRetryAfter = std::chrono::seconds(30);  // a repair another asma had in hand
+constexpr auto kFirstBackoff = std::chrono::seconds(30);
+constexpr auto kLongestBackoff = std::chrono::seconds(30 * 60);
+constexpr int kLetGoTicks = 2; // a second for every window to let go of the file
 constexpr auto kBackupEvery = std::chrono::hours(24);
 constexpr auto kBackupLookEvery = std::chrono::minutes(1);
 
@@ -128,11 +130,21 @@ void LibraryKeeper::tell(std::string news)
     ++messages_;
 }
 
-void LibraryKeeper::repair()
+void LibraryKeeper::startRepair(Clock::time_point now)
 {
     safety_ = Safety::Repairing;
+    repairLaunched_ = false;
+    letGoTicks_ = 0;
+    view_.suspend(true); // and the windows follow at their next look
     if (scanning_) // a scan of the damaged file is no use
         if (auto* job = dynamic_cast<ScanJob*>(runner_.get())) job->cancel();
+    retryAt_ = now + backoff_;
+    backoff_ = std::min<std::chrono::seconds>(backoff_ * 2, kLongestBackoff);
+}
+
+void LibraryKeeper::launchRepair()
+{
+    repairLaunched_ = true;
     CliLane::Command command;
     command.steps = {{"repair"}};
     command.onLine = [this](const std::string& line) {
@@ -152,11 +164,18 @@ void LibraryKeeper::repair()
                 news += " " + groupDigits(lost) + " organised samples were not found; their ratings come back when they are.";
             tell(news);
             schedule_ = ScanSchedule{}; // every folder is new to the new library: scan them all
-        } else if (result == "locked" || result == "in_use") {
-            retryAt_ = Clock::now() + kRetryAfter; // another asma has it in hand, or holds the file
+            damageSuspected_ = false;
+            backoff_ = kFirstBackoff;
+            waitTold_ = false;
+        } else if (result == "healthy") {
+            damageSuspected_ = false; // the check under the lock found none; backed off if it is reported again
+        } else if (result == "in_use" && !waitTold_) {
+            waitTold_ = true; // another asma process holds the file: tried again, backing off
+            tell("The library is damaged; asma will rebuild it once the other asma windows are closed.");
         }
     };
     command.onEnd = [this](const std::string&) {
+        view_.suspend(false);
         if (safety_ == Safety::Repairing) safety_ = Safety::Idle;
     };
     helper_.run(std::move(command));
@@ -164,13 +183,17 @@ void LibraryKeeper::repair()
 
 void LibraryKeeper::keepSafe(Clock::time_point now)
 {
-    if (safety_ == Safety::Checking || safety_ == Safety::Repairing) return;
+    if (safety_ == Safety::Checking) return;
+    if (safety_ == Safety::Repairing) {
+        if (!repairLaunched_ && ++letGoTicks_ >= kLetGoTicks) launchRepair();
+        return;
+    }
     if (safety_ == Safety::Unchecked) {
         safety_ = Safety::Checking;
         CliLane::Command command;
         command.steps = {{"check"}};
         command.onLine = [this](const std::string& line) {
-            if (line.find("\"health\":\"damaged\"") != std::string::npos) repair();
+            if (line.find("\"health\":\"damaged\"") != std::string::npos) damageSuspected_ = true;
         };
         command.onEnd = [this](const std::string&) {
             if (safety_ == Safety::Checking) safety_ = Safety::Idle;
@@ -178,9 +201,10 @@ void LibraryKeeper::keepSafe(Clock::time_point now)
         helper_.run(std::move(command));
         return;
     }
-    // Damage found since: the view, reading, met a malformed page.
-    if (view_.state() == LibraryState::Damaged && now >= retryAt_) {
-        repair();
+    // Damage the check found, or a read met (this keeper's or a window's),
+    // is rebuilt, backing off while it cannot be or is not confirmed.
+    if ((damageSuspected_ || view_.state() == LibraryState::Damaged) && now >= retryAt_) {
+        startRepair(now);
         return;
     }
     // Once a day, the user's data, beside the library.
@@ -195,7 +219,9 @@ void LibraryKeeper::keepSafe(Clock::time_point now)
 
 void LibraryKeeper::tick(Clock::time_point now)
 {
+    lastTick_ = now;
     view_.refresh();
+    if (view_.takeDamage()) damageSuspected_ = true;
     keepSafe(now);
     if (safety_ != Safety::Idle) return; // no scanning a library being checked or rebuilt
     if (!runner_->ready()) return;
