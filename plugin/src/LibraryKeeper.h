@@ -2,6 +2,7 @@
 #pragma once
 
 #include "LibraryView.h"
+#include "LibraryWriter.h"
 #include "ScanJob.h"
 #include "ScanSchedule.h"
 #include "asma/core/FolderWatcher.h"
@@ -24,21 +25,28 @@ namespace asma::app {
 // through asma-scan. One per process (the app's, or one for every asma window
 // in a host), shared through shared(). Across processes the writer lock
 // decides: a scan refused by it is skipped and the next change or poll
-// catches up. With no asma-scan to run it does nothing. Message thread only,
-// but for folderChanged().
+// catches up. With no asma-scan to run it does not scan.
+// It also keeps the library safe, through the asma helper so a plugin never
+// writes inside its host: it checks the library when it starts, has a damaged
+// one rebuilt (asma repair) at once, and has the user's data backed up once a
+// day (asma backup). Message thread only, but for folderChanged().
 class LibraryKeeper : private juce::Timer {
 public:
     using Clock = ScanSchedule::Clock;
 
-    LibraryKeeper(std::filesystem::path dbPath, std::unique_ptr<ScanRunner> runner);
+    LibraryKeeper(std::filesystem::path dbPath, std::unique_ptr<ScanRunner> runner, std::filesystem::path cli);
     ~LibraryKeeper() override;
     LibraryKeeper(const LibraryKeeper&) = delete;
     LibraryKeeper& operator=(const LibraryKeeper&) = delete;
 
     // The process's keeper for this library, made with a ScanJob running
     // `worker` if there is none yet; it lives while anyone holds it.
-    static std::shared_ptr<LibraryKeeper> shared(const std::filesystem::path& dbPath,
-                                                 const std::filesystem::path& worker);
+    static std::shared_ptr<LibraryKeeper> shared(const std::filesystem::path& dbPath, const std::filesystem::path& worker,
+                                                 const std::filesystem::path& cli);
+    // Where the asma helper is; takes effect from the next command.
+    void setCli(std::filesystem::path cli) { helper_.setCli(std::move(cli)); }
+    // Nothing being checked, rebuilt or backed up.
+    bool settled() const { return safety_ == Safety::Idle && helper_.idle(); }
 
     // The standalone's Add folder: adds it to the library and scans it next.
     bool addFolder(const std::filesystem::path& folder, std::string* error = nullptr);
@@ -58,6 +66,9 @@ private:
     void timerCallback() override { tick(Clock::now()); }
     void readFolders(Clock::time_point now);
     void finished(const ScanReport& report);
+    void keepSafe(Clock::time_point now);
+    void repair();
+    void tell(std::string news);
 
     const std::filesystem::path dbPath_;
     std::unique_ptr<ScanRunner> runner_;
@@ -68,9 +79,18 @@ private:
     std::optional<std::int64_t> scanning_;
     std::string message_;
     std::uint64_t messages_ = 0;
+    enum class Safety { Unchecked, Checking, Repairing, Idle };
+    Safety safety_ = Safety::Unchecked;
+    Clock::time_point retryAt_{};        // a repair or backup that could not run is tried again then
+    Clock::time_point backupCheckAt_{};  // when to look at the backup's age again
+    std::filesystem::path backupPath_;
+    CliLane helper_;
     std::mutex changedMutex_; // guards changed_, filled by the watcher's thread
     std::vector<std::int64_t> changed_;
     std::unique_ptr<FolderWatcher> watcher_; // last: its thread calls folderChanged
 };
+
+// "7 October" for "2026-10-07T09:00:00Z"; empty when it is not a date.
+std::string backupDay(const std::string& writtenAt);
 
 } // namespace asma::app

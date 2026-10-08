@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "EditorRig.h"
 #include "LibraryKeeper.h"
+#include "asma/core/Backup.h"
+#include "asma/core/Fs.h"
 #include "asma/core/Library.h"
+#include "asma/core/UserData.h"
+
+#include <fstream>
+#include <sqlite3.h>
+#include <sstream>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -62,7 +69,18 @@ struct KeeperRig {
         }
         auto fake = std::make_unique<FakeRunner>();
         runner = fake.get();
-        keeper = std::make_unique<LibraryKeeper>(f.dbPath, std::move(fake));
+        keeper = std::make_unique<LibraryKeeper>(f.dbPath, std::move(fake), ASMA_CLI_PATH);
+    }
+    // Ticks at t0 until the startup check (through the helper) is done; the
+    // tick after it starts the first scan.
+    void start()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + 20s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            keeper->tick(t0);
+            if (!runner->started.empty()) return;
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+        }
     }
 };
 
@@ -71,7 +89,7 @@ struct KeeperRig {
 TEST_CASE("the keeper scans every folder once at startup, one at a time", "[keeper]")
 {
     KeeperRig rig;
-    rig.keeper->tick(rig.t0);
+    rig.start();
     CHECK(rig.runner->started == std::vector<std::int64_t>{rig.samples});
     rig.keeper->tick(rig.t0 + 1s); // still running: nothing more
     CHECK(rig.runner->started.size() == 1);
@@ -88,7 +106,7 @@ TEST_CASE("the keeper scans every folder once at startup, one at a time", "[keep
 TEST_CASE("the keeper scans a folder the watcher reports", "[keeper]")
 {
     KeeperRig rig;
-    rig.keeper->tick(rig.t0);
+    rig.start();
     rig.runner->finish();
     rig.keeper->tick(rig.t0 + 1s);
     rig.runner->finish();
@@ -102,7 +120,7 @@ TEST_CASE("the keeper scans a folder the watcher reports", "[keeper]")
 TEST_CASE("the keeper reports news, not quiet scans or a lock refused", "[keeper]")
 {
     KeeperRig rig;
-    rig.keeper->tick(rig.t0);
+    rig.start();
     rig.runner->finish(ScanReport::Result::Finished, 0);
     rig.keeper->tick(rig.t0 + 1s);
     CHECK(rig.keeper->messageCount() == 0);
@@ -120,7 +138,7 @@ TEST_CASE("the keeper reports news, not quiet scans or a lock refused", "[keeper
 TEST_CASE("a folder added elsewhere is scanned at the next tick", "[keeper]")
 {
     KeeperRig rig;
-    rig.keeper->tick(rig.t0);
+    rig.start();
     rig.runner->finish();
     rig.keeper->tick(rig.t0 + 1s);
     rig.runner->finish();
@@ -139,12 +157,12 @@ TEST_CASE("every window in a process shares one keeper", "[keeper]")
 {
     test::LibraryFixture f;
     const juce::ScopedJuceInitialiser_GUI gui;
-    auto a = LibraryKeeper::shared(f.dbPath, "asma-scan");
-    auto b = LibraryKeeper::shared(f.dbPath, "asma-scan");
+    auto a = LibraryKeeper::shared(f.dbPath, "asma-scan", "asma-cli");
+    auto b = LibraryKeeper::shared(f.dbPath, "asma-scan", "asma-cli");
     CHECK(a == b);
     a.reset();
     b.reset();
-    CHECK(LibraryKeeper::shared(f.dbPath, "asma-scan") != nullptr); // made again once none held it
+    CHECK(LibraryKeeper::shared(f.dbPath, "asma-scan", "asma-cli") != nullptr); // made again once none held it
 }
 
 TEST_CASE("a sample dropped into a watched folder appears in the table", "[keeper][watch]")
@@ -160,4 +178,114 @@ TEST_CASE("a sample dropped into a watched folder appears in the table", "[keepe
         rig.editor->poll();
     }
     CHECK(rig.editor->table().getNumRows() == 4);
+}
+
+namespace {
+
+// Overwrites a closed library's pages after the first, as a disk fault would.
+void damage(const fs::path& db)
+{
+    std::fstream f(db, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(4096);
+    const std::string junk(4096 * 3, '\xA5');
+    f.write(junk.data(), static_cast<std::streamsize>(junk.size()));
+}
+
+// Ticks until the keeper has nothing in hand with the helper.
+void settle(LibraryKeeper& keeper, LibraryKeeper::Clock::time_point now)
+{
+    const auto deadline = std::chrono::steady_clock::now() + 30s;
+    do {
+        keeper.tick(now);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+    } while (!keeper.settled() && std::chrono::steady_clock::now() < deadline);
+}
+
+// A backup of the library as it is, said to be written on 7 October.
+void backupOn7October(const test::LibraryFixture& f)
+{
+    {
+        Db db = Db::open(f.dbPath);
+        writeBackup(db, f.dbPath.parent_path() / "backup.json", f.dbPath.parent_path() / "backup-previous.json");
+    }
+    std::ifstream in(f.dbPath.parent_path() / "backup.json");
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string text = ss.str();
+    const auto at = text.find("\"written\":\"") + 11;
+    text.replace(at, 20, "2026-10-07T09:00:00Z");
+    std::ofstream(f.dbPath.parent_path() / "backup.json", std::ios::trunc) << text;
+}
+
+} // namespace
+
+TEST_CASE("a damaged library at startup is rebuilt, and the footer says from when", "[keeper][safety]")
+{
+    KeeperRig rig;
+    {
+        Db db = Db::open(rig.f.dbPath);
+        UserData(db).setRating(Library(db).fileByAbsolutePath(rig.f.kick)->id, 5);
+    }
+    backupOn7October(rig.f);
+    damage(rig.f.dbPath);
+    settle(*rig.keeper, rig.t0);
+    CHECK(rig.keeper->messageCount() == 1);
+    CHECK(rig.keeper->message() ==
+          "The library was damaged and has been rebuilt; your ratings and collections were restored from 7 October.");
+    CHECK(fs::exists(rig.f.dbPath.parent_path() / "library.db.corrupt"));
+    Db db = Db::open(rig.f.dbPath);
+    CHECK(UserData(db).rating(Library(db).fileByAbsolutePath(rig.f.kick)->id) == 5);
+}
+
+TEST_CASE("a sound library is checked and left alone", "[keeper][safety]")
+{
+    KeeperRig rig;
+    settle(*rig.keeper, rig.t0);
+    CHECK(rig.keeper->messageCount() == 0);
+    CHECK_FALSE(fs::exists(rig.f.dbPath.parent_path() / "library.db.corrupt"));
+}
+
+TEST_CASE("damage met while reading is rebuilt too", "[keeper][safety]")
+{
+    KeeperRig rig;
+    settle(*rig.keeper, rig.t0); // checked: sound
+    {
+        // Garbage in the schema, through another connection (Windows-safe).
+        sqlite3* db = nullptr;
+        REQUIRE(sqlite3_open(toUtf8(rig.f.dbPath).c_str(), &db) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(db, "PRAGMA writable_schema = ON; UPDATE sqlite_master SET sql = 'garbage' "
+                                 "WHERE name = 'files'; PRAGMA schema_version = 999;",
+                             nullptr, nullptr, nullptr) == SQLITE_OK);
+        sqlite3_close(db);
+    }
+    settle(*rig.keeper, rig.t0 + 1s);
+    settle(*rig.keeper, rig.t0 + 2s);
+    CHECK(rig.keeper->message().rfind("The library was damaged and has been rebuilt", 0) == 0);
+}
+
+TEST_CASE("the user's data is backed up once a day", "[keeper][safety]")
+{
+    KeeperRig rig;
+    const auto backup = rig.f.dbPath.parent_path() / "backup.json";
+    settle(*rig.keeper, rig.t0);
+    settle(*rig.keeper, rig.t0 + 1s);
+    REQUIRE(fs::exists(backup)); // none yet: made now
+    const auto written = fs::last_write_time(backup);
+    settle(*rig.keeper, rig.t0 + 2min);
+    const bool untouched = fs::last_write_time(backup) == written;
+    CHECK(untouched); // a day has not passed
+    fs::last_write_time(backup, written - std::chrono::hours(25));
+    settle(*rig.keeper, rig.t0 + 4min);
+    settle(*rig.keeper, rig.t0 + 4min + 1s);
+    const bool rewritten = fs::last_write_time(backup) > written - std::chrono::hours(1);
+    CHECK(rewritten);
+    CHECK(fs::exists(rig.f.dbPath.parent_path() / "backup-previous.json"));
+}
+
+TEST_CASE("the backup's day reads as a person would say it", "[keeper]")
+{
+    CHECK(app::backupDay("2026-10-07T09:00:00Z") == "7 October");
+    CHECK(app::backupDay("2027-01-31T23:59:59Z") == "31 January");
+    CHECK(app::backupDay("").empty());
+    CHECK(app::backupDay("yesterday").empty());
 }

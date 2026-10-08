@@ -44,7 +44,8 @@ juce::Font starFont() { return theme::font(theme::Face::Text, 11.0f).withExtraKe
 AsmaEditor::AsmaEditor(AsmaProcessor& owner)
     : juce::AudioProcessorEditor(owner), processor_(owner),
       library_(owner.libraryPath(), owner.isStandalone() ? LibraryView::Access::MayMigrate : LibraryView::Access::ReadOnly),
-      keeper_(LibraryKeeper::shared(owner.libraryPath(), ScanJob::workerNextTo(owner.binary()))),
+      keeper_(LibraryKeeper::shared(owner.libraryPath(), ScanJob::workerNextTo(owner.binary()),
+                                    LibraryWriter::cliNextTo(owner.binary()))),
       top_(owner.isStandalone())
 {
     setLookAndFeel(&lookAndFeel_);
