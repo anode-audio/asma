@@ -101,6 +101,9 @@ public:
     // The library's id for a file, by its path; nothing when it is not in it.
     std::optional<std::int64_t> fileId(const std::filesystem::path& file);
     audio::SampleInfo info(std::int64_t fileId);
+    // A file's row as a search gives it; nothing when it is not a sample a
+    // search can show (or the library is not open).
+    std::optional<SearchRow> row(std::int64_t fileId);
     // The file's content hash, or empty when unknown.
     std::string contentHash(std::int64_t fileId);
     // What the library knows about a file by its path; empty when it is not

@@ -6,6 +6,7 @@
 #include "TempoChip.h"
 #include "asma/audio/Render.h"
 #include "asma/core/Fs.h"
+#include "ui/TableRows.h"
 #include "ui/Theme.h"
 
 #include <algorithm>
@@ -190,7 +191,7 @@ void AsmaEditor::loadState()
     chips_.setModel(state.search);
     refreshSidebar();
     showSort(state.search);
-    table_.updateContent();
+    refreshRows(table_);
     showSelection();
 }
 
@@ -610,7 +611,16 @@ void AsmaEditor::poll()
     }
     if (browser_.poll()) {
         pending_.libraryChanged();
-        table_.updateContent();
+        // The selection follows its sample: renamed or moved outside asma, it
+        // keeps its id, and the project's path (what a drag carries) follows.
+        if (selected_)
+            if (const auto now = library_.row(selected_->id)) {
+                const std::string path = toUtf8(LibraryView::pathOf(*now));
+                if (path != processor_.pluginState().selected)
+                    processor_.updateState([&](PluginState& s) { s.selected = path; });
+                selected_ = *now;
+            }
+        refreshRows(table_);
         similarFor_ = 0; // the library changed: analysis may have reached the selection
         showSelection();
         refreshSidebar();
@@ -633,7 +643,7 @@ void AsmaEditor::applySearch(const SearchModel& model)
     if (top_.searchBox().getText().toStdString() != model.text) top_.searchBox().setText(model.text, false);
     chips_.setModel(model);
     showSort(model); // a saved search brings its sort
-    table_.updateContent();
+    refreshRows(table_);
     showSelection();
     updateReadouts();
 }

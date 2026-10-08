@@ -49,6 +49,7 @@ public:
     // that are unknown are left out.
     static juce::String fileLine(const std::string& folder, int sampleRate, int channels, double seconds);
 
+    const juce::String& fileName() const { return name_; }
     WaveformView& waveform() { return waveform_; }
     SegmentedControl& direction() { return direction_; }
     SegmentedControl& loop() { return loop_; }

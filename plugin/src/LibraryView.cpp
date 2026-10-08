@@ -213,6 +213,17 @@ std::vector<Problem> LibraryView::problems()
     return guarded([&] { return Library(*db_).problems(); }, std::vector<Problem>{});
 }
 
+std::optional<SearchRow> LibraryView::row(std::int64_t fileId)
+{
+    return guarded(
+        [&]() -> std::optional<SearchRow> {
+            auto rows = rowsForIds(*db_, {fileId});
+            if (rows.empty()) return std::nullopt;
+            return std::move(rows.front());
+        },
+        std::optional<SearchRow>{});
+}
+
 std::int64_t LibraryView::sampleCount()
 {
     return guarded(

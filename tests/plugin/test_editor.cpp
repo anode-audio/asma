@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "EditorRig.h"
 #include "asma/core/Analyser.h"
+#include "asma/core/Scanner.h"
 #include "asma/core/UserData.h"
 #include "asma/audio/Render.h"
 #include "asma/core/Fs.h"
@@ -610,4 +611,23 @@ TEST_CASE("opening the window with nothing selected leaves the library open", "[
     CHECK(rig.editor->sidebar().rowCount() == 3); // All, Favourites, the folder: the library still answers
     rig.type("snare");
     CHECK(rig.editor->table().getNumRows() == 1);
+}
+
+TEST_CASE("a selected sample renamed outside asma stays selected, under its new name", "[editor]")
+{
+    EditorRig rig(AsmaProcessor::Mode::Standalone);
+    rig.type("kick");
+    rig.editor->table().selectRow(0);
+    REQUIRE(rig.playing());
+    REQUIRE(rig.editor->preview().fileName() == "Kick_01.wav");
+    const fs::path renamed = rig.f.kick.parent_path() / "Kick_01_tight.wav";
+    fs::rename(rig.f.kick, renamed);
+    {
+        Db db = Db::open(rig.f.dbPath); // what the keeper's scan does
+        scanRoot(db, Library(db).roots().front().id);
+    }
+    rig.editor->poll();
+    CHECK(rig.editor->preview().fileName() == "Kick_01_tight.wav");
+    CHECK(fs::equivalent(fromUtf8(rig.p->pluginState().selected), renamed)); // saved with the project, and what a drag carries
+    CHECK(rig.editor->table().getSelectedRow() == 0);
 }
