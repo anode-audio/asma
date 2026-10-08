@@ -57,8 +57,8 @@ support, speed, and crash isolation.
 ### In v1
 
 - **Library:** user-added root folders, incremental scans (mtime + size +
-  content hash), a file watcher while the app runs, and re-linking of files
-  moved outside the app by hash match.
+  content hash), a file watcher while any asma window is open, and re-linking of
+  files moved outside the app by hash match.
 - **Analysis (DSP only):** loop vs one-shot, BPM, key, duration, peak, LUFS,
   spectral descriptors. Embedded metadata (ACID chunk, `smpl` chunk) and BPM/key
   parsed from filenames. Instrument tags guessed from filename and folder tokens
@@ -168,7 +168,8 @@ Rules:
 
 ### Scan
 
-1. The UI triggers a scan (root added, watcher event, manual rescan) and spawns
+1. A scan starts when a folder is added, when the watcher reports a change, once
+   per folder at startup and every 15 minutes (see Watching); it spawns
    `asma-scan --db <path> --root <id>`.
 2. The worker walks the root and diffs against `files`:
    - new path: queue for analysis;
@@ -186,11 +187,38 @@ Rules:
 6. Readers notice changes via SQLite `PRAGMA data_version` polling and refresh
    the visible result set incrementally.
 
+### Watching
+
+The app and the plugins keep the library in step with the sample folders while
+any asma window is open, so a sample dropped into a folder appears in seconds
+and one deleted or renamed outside asma goes or follows.
+
+- **`FolderWatcher` (core, no JUCE)** watches each enabled folder recursively
+  through the operating system's change notices (FSEvents,
+  ReadDirectoryChangesW, inotify, through efsw), and reports a folder changed
+  once it has been quiet for 2 seconds: a burst of files gives one report.
+  Hidden files and asma's own data directory never count.
+- **`LibraryKeeper`**, one per process (shared by the app, or by every asma
+  instance in one host), reads the folders from the library and again whenever
+  the library changes, so a folder added elsewhere is watched here too. It scans
+  each enabled folder once at startup, a folder the watcher reports, and every
+  folder every 15 minutes (for what the notices miss: network shares, some
+  external drives, inotify's watch limit). Scans run through `asma-scan`, one at
+  a time; a folder already queued is not queued twice.
+- **Across processes the writer lock decides**: a scan refused by it is skipped,
+  and the next change or poll catches up. Nothing waits or spins.
+- **A missing folder** (an unplugged drive) is not watched; the poll notices it
+  back, rescans it and watches it again.
+- **Plugins scan too**, through `asma-scan` shipped beside their binary as
+  `asma-cli` is; the plugin still never writes the library inside the host. The
+  footer shows a scan's progress in a plugin as in the app.
+
 ### Single writer
 
-Only `asma-scan` and standalone file operations take the writer lock. A lock
-file in the data directory holds the writer's PID; a stale lock (dead PID) is
-taken over. File operations wait for a running scan to finish, or pause it.
+Only `asma-scan`, `asma retry`, `asma repair` and standalone file operations
+take the writer lock. A lock file in the data directory holds the writer's PID;
+a stale lock (dead PID) is taken over. File operations wait for a running scan
+to finish, or pause it.
 
 User data (ratings, favourites, user tags, collections, saved searches) is
 written in short transactions without the writer lock, so rating a sample never
@@ -503,11 +531,30 @@ without playing, with its tempo and key from the library.
 - **Decode or analysis failure:** file marked `failed` with a reason, shown in
   the Problems panel; never blocks the scan.
 - **Scanner crash:** handled as in section 6, step 5.
-- **Database corruption:** `PRAGMA integrity_check` at startup; on failure the
-  file is moved aside as `.corrupt`, a new database is created and a rescan
-  starts. User data (tags, ratings, collections, favourites, saved searches) is
-  exported nightly to a JSON sidecar next to the database and re-imported,
-  matched by content hash.
+- **Database corruption:** checked when the first asma window in a process opens
+  the library, with SQLite's `PRAGMA quick_check` on a background thread (the
+  same page and record damage as `integrity_check`, without verifying index
+  contents: seconds, not a minute, on a large library); a query that fails with
+  "database disk image is malformed" later leads to the same path. A damaged
+  library is rebuilt without asking, by `asma repair` (a helper, so a plugin can
+  start it without writing inside the host): it takes the writer lock, checks
+  again and never moves a healthy library; renames `library.db` and its `-wal`
+  and `-shm` to `library.db.corrupt` (dated when one exists), deleting nothing;
+  creates a new library with the backup's folders (or, with no backup, those the
+  damaged file still yields), scans them and restores the backup. The footer
+  says so: "The library was damaged and has been rebuilt; your ratings and
+  collections were restored from 7 October."
+- **Daily backup:** once a day while asma runs, `asma backup` writes
+  `backup.json` beside the library (written aside, then renamed into place),
+  keeping the day before's as `backup-previous.json`. It holds the folders; each
+  organised sample by content hash and size with its rating, favourite and user
+  tags; collections with their members by hash; and saved searches, with folder
+  and collection references by path and name. `asma restore FILE` applies one by
+  hand. Restoring matches samples by content, so moved files keep their data,
+  and a sample present twice gets it twice; entries that match nothing are
+  counted in the footer ("12 organised samples were not found"), and stay in the
+  backup and the `.corrupt` file. Unknown fields from another asma version are
+  ignored. `asma check` runs the check by hand.
 - **File operation failure mid-group:** execution stops, the group is left
   partially `done`, and the user is offered undo of the completed part.
 - **Trash unavailable:** delete refused, no fallback.
@@ -536,6 +583,7 @@ CMake + Ninja. Dependencies fetched with CPM/FetchContent at pinned versions:
 | stb_vorbis                        | Ogg Vorbis decoding in asma-core | MIT / public domain   |
 | libebur128                        | LUFS                             | MIT                   |
 | Ableton Link                      | standalone tempo sync            | GPLv2+                |
+| efsw                              | folder change notices            | MIT                   |
 | Catch2                            | tests                            | BSL-1.0               |
 
 asma-core decodes audio with dr_libs and stb_vorbis rather than JUCE, so the
@@ -571,6 +619,15 @@ core, the audio engine, the CLI and the scanner build without JUCE.
   macOS) and clap-validator (CLAP) in CI on all three platforms.
   clap-validator's `param-conversions` test is skipped: it divides by the
   parameter count, and asma has no parameters.
+- **Watching and the safety net:** the watcher on real temporary folders
+  (waiting up to a few seconds for each report, since notices lag on CI); the
+  keeper with a fake clock and a fake scan runner; one end-to-end test where a
+  file dropped into a watched folder reaches the editor's table; backup and
+  restore round trips (moved and renamed files, saved searches' references,
+  duplicates, unmatched entries, a crash mid-write); `asma repair` refusing a
+  healthy library and rebuilding one corrupted through a second SQLite
+  connection; two processes starting on a damaged library, only one rebuilding;
+  a library locked by a scan never taken for a damaged one.
 - **Performance:** scan, query and Similar timings over a synthetic 50k-file
   library, reported in CI (informational, not gating). Similar runs on the
   message thread while it stays under 50 ms there; past that it moves to a
