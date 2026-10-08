@@ -247,6 +247,7 @@ CliLane::CliLane(std::filesystem::path dbPath, std::filesystem::path cli)
 
 CliLane::~CliLane()
 {
+    alive_->store(false);
     {
         const std::lock_guard lock(mutex_);
         stopping_ = true;
@@ -299,7 +300,10 @@ void CliLane::loop()
             const std::lock_guard lock(mutex_);
             if (stopping_) return; // nobody is waiting for the outcome
         }
-        if (command.onEnd) onMessageThread([end = std::move(command.onEnd), error] { end(error); });
+        if (command.onEnd)
+            onMessageThread([alive = alive_, end = std::move(command.onEnd), error] {
+                if (alive->load()) end(error);
+            });
         // Idle only once the outcome is on its way, so a test that waits for
         // idle and then runs the message loop sees it.
         const std::lock_guard lock(mutex_);
@@ -332,7 +336,10 @@ std::string CliLane::runStep(const std::vector<std::string>& step, const std::fu
     std::string error;
     while (const auto line = process->readLine()) {
         if (line->rfind("error: ", 0) == 0) error = reasonText(line->substr(7));
-        else if (onLine) onMessageThread([onLine, text = *line] { onLine(text); });
+        else if (onLine)
+            onMessageThread([alive = alive_, onLine, text = *line] {
+                if (alive->load()) onLine(text);
+            });
     }
     const ExitStatus status = process->wait();
     {

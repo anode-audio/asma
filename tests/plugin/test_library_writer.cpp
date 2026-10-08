@@ -288,3 +288,26 @@ TEST_CASE("a plugin writes through the helper, the standalone directly", "[write
     CHECK(dynamic_cast<CliWriter*>(&plugin.writer()) != nullptr);
     CHECK(dynamic_cast<DirectWriter*>(&standalone.writer()) != nullptr);
 }
+
+TEST_CASE("a lane gone before its outcome is delivered delivers nothing", "[writer]")
+{
+    test::LibraryFixture f;
+    f.scan();
+    const juce::ScopedJuceInitialiser_GUI gui;
+    bool delivered = false;
+    {
+        app::CliLane lane(f.dbPath, ASMA_CLI_PATH);
+        app::CliLane::Command command;
+        command.steps = {{"check"}};
+        command.onLine = [&](const std::string&) { delivered = true; };
+        command.onEnd = [&](const std::string&) { delivered = true; };
+        lane.run(std::move(command));
+        // The outcome is posted to the message loop, which does not run yet.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (!lane.idle() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        REQUIRE(lane.idle());
+    } // whoever owned the lane, and what its callbacks point at, is gone
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+    CHECK_FALSE(delivered);
+}

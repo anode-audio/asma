@@ -4,6 +4,7 @@
 #include "asma/core/Db.h"
 #include "asma/core/Query.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -82,7 +83,9 @@ public:
         std::function<void(const std::string& error)> onEnd; // empty on success
     };
     CliLane(std::filesystem::path dbPath, std::filesystem::path cli);
-    ~CliLane(); // drops what has not started, ends what runs, and waits
+    // Drops what has not started, ends what runs, and waits; outcomes posted
+    // but not yet delivered are never delivered.
+    ~CliLane();
     CliLane(const CliLane&) = delete;
     CliLane& operator=(const CliLane&) = delete;
 
@@ -103,6 +106,9 @@ private:
     bool stopping_ = false;
     struct Running;
     std::shared_ptr<Running> current_; // the process to end on shutdown
+    // False once the lane is gone: an outcome already posted to the message
+    // loop is then dropped, since what its callbacks point at may be gone too.
+    std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
     std::thread thread_;
 };
 
