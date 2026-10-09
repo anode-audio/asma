@@ -147,4 +147,17 @@ std::error_code renameNoReplace(const fs::path& from, const fs::path& to)
 #endif
 }
 
+bool sameVolume(const fs::path& a, const fs::path& b)
+{
+#ifdef _WIN32
+    wchar_t va[MAX_PATH + 1] = {}, vb[MAX_PATH + 1] = {};
+    if (!GetVolumePathNameW(fs::absolute(a).c_str(), va, MAX_PATH)) return false;
+    if (!GetVolumePathNameW(fs::absolute(b).c_str(), vb, MAX_PATH)) return false;
+    return _wcsicmp(va, vb) == 0;
+#else
+    struct stat sa {}, sb {};
+    return ::stat(a.c_str(), &sa) == 0 && ::stat(b.c_str(), &sb) == 0 && sa.st_dev == sb.st_dev;
+#endif
+}
+
 } // namespace asma

@@ -48,6 +48,10 @@ std::int64_t fileTimeToInt(std::filesystem::file_time_type time);
 // one made a moment ago, fails with std::errc::file_exists. Same volume only.
 std::error_code renameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to);
 
+// Whether two existing paths are on the same volume, where a rename can move
+// one to the other.
+bool sameVolume(const std::filesystem::path& a, const std::filesystem::path& b);
+
 // Which file a path names now, as an opaque string: two calls give the same
 // string unless the file was replaced (renamed over, deleted and made again).
 // Empty when it cannot tell, and always on Windows, which never lets a file
