@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -47,6 +48,28 @@ TEST_CASE("The system trash takes a file and gives it back", "[trash]")
     CHECK_FALSE(fs::exists(trashed.where));
     CHECK(slurp(file) == "RIFF kick");
 }
+
+#ifdef __APPLE__
+TEST_CASE("A fresh volume, with no trash folder yet, can take a file to the Trash", "[trash]")
+{
+    TempDir dir;
+    const fs::path image = dir.path() / "fresh.dmg";
+    const fs::path mount = dir.path() / "mnt";
+    fs::create_directories(mount);
+    const std::string create = "hdiutil create -quiet -size 20m -fs APFS -volname asmafresh \"" + image.string() + "\"";
+    REQUIRE(std::system(create.c_str()) == 0);
+    const std::string attach =
+        "hdiutil attach -quiet -nobrowse -mountpoint \"" + mount.string() + "\" \"" + image.string() + "\"";
+    REQUIRE(std::system(attach.c_str()) == 0);
+    const fs::path file = mount / "kick.wav";
+    test::writeBytes(file, "kick");
+    CHECK(trashAvailable(file));
+    const TrashResult trashed = moveToTrash(file);
+    CHECK(trashed.ok);
+    if (trashed.ok) CHECK(restoreFromTrash(trashed.where, file).empty());
+    std::system(("hdiutil detach -quiet -force \"" + mount.string() + "\"").c_str());
+}
+#endif
 
 TEST_CASE("Restoring from the trash says why it cannot", "[trash]")
 {

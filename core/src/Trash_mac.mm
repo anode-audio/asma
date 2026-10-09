@@ -22,12 +22,19 @@ bool trashAvailable(const fs::path& file)
 {
     @autoreleasepool {
         NSError* error = nil;
+        NSURL* url = urlOf(file);
         NSURL* trash = [[NSFileManager defaultManager] URLForDirectory:NSTrashDirectory
                                                              inDomain:NSUserDomainMask
-                                                    appropriateForURL:urlOf(file)
+                                                    appropriateForURL:url
                                                                create:NO
                                                                 error:&error];
-        return trash != nil;
+        if (trash != nil) return true;
+        // A volume nothing was ever trashed from has no .Trashes folder yet:
+        // trashItemAtURL makes one. Only a read-only volume surely has none;
+        // anywhere else the move itself decides, and a refusal moves nothing.
+        NSNumber* readOnly = nil;
+        if (![url getResourceValue:&readOnly forKey:NSURLVolumeIsReadOnlyKey error:nil] || readOnly == nil) return false;
+        return ![readOnly boolValue];
     }
 }
 
