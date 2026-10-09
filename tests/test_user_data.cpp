@@ -47,7 +47,7 @@ TEST_CASE("migration 3 adds the user-data tables to a version 2 library", "[user
     db.exec("INSERT INTO roots(id, path) VALUES (1, '/r')");
     db.exec("INSERT INTO files(id, root_id, rel_path, name, size, mtime, format, status) VALUES "
             "(1, 1, 'a.wav', 'a.wav', 1, 1, 'wav', 'ok')");
-    migrate(db);
+    migrate(db, 3);
     CHECK(db.schemaVersion() == 3);
     UserData user(db);
     user.setRating(1, 4);

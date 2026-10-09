@@ -12,7 +12,7 @@ namespace asma {
 namespace {
 
 // Append-only. Never edit a migration that has shipped; add a new one.
-constexpr std::array<std::string_view, 3> kMigrations = {
+constexpr std::array<std::string_view, 4> kMigrations = {
     R"SQL(
 CREATE TABLE roots (
     id INTEGER PRIMARY KEY,
@@ -119,6 +119,34 @@ CREATE TABLE saved_searches (
     name TEXT NOT NULL UNIQUE COLLATE NOCASE,
     model TEXT NOT NULL
 );
+)SQL",
+    R"SQL(
+-- A trashed sample keeps its row, and with it the user's data, until its
+-- journal group is pruned: trashed_by is the journal step that trashed it.
+ALTER TABLE files ADD COLUMN trashed_by INTEGER;
+CREATE INDEX files_trashed ON files(trashed_by) WHERE trashed_by IS NOT NULL;
+
+-- File operations, each group undoable as one.
+CREATE TABLE journal_groups (
+    id INTEGER PRIMARY KEY,
+    label TEXT NOT NULL,
+    at TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('running', 'done', 'undone', 'rolled_back'))
+);
+
+CREATE TABLE journal (
+    id INTEGER PRIMARY KEY,
+    group_id INTEGER NOT NULL REFERENCES journal_groups(id) ON DELETE CASCADE,
+    op TEXT NOT NULL CHECK (op IN ('rename', 'move', 'trash', 'remove_root')),
+    file_id INTEGER,
+    root_id INTEGER,
+    src TEXT NOT NULL,
+    dst TEXT,
+    trash_ref TEXT,
+    state TEXT NOT NULL CHECK (state IN ('planned', 'done', 'undone', 'failed')),
+    at TEXT NOT NULL
+);
+CREATE INDEX journal_group ON journal(group_id);
 )SQL",
 };
 

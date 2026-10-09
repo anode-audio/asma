@@ -148,7 +148,11 @@ std::int64_t Library::addRoot(const fs::path& dir)
 
     auto select = db_.prepare("SELECT id FROM roots WHERE path = ?");
     select.bind(1, std::string_view(path));
-    if (select.step()) return select.getInt(0);
+    if (select.step()) {
+        const auto id = select.getInt(0);
+        setRootEnabled(id, true);
+        return id;
+    }
 
     auto insert = db_.prepare("INSERT INTO roots(path) VALUES (?)");
     insert.bind(1, std::string_view(path));
@@ -170,6 +174,38 @@ std::optional<Root> Library::root(std::int64_t id)
     q.bind(1, id);
     if (!q.step()) return std::nullopt;
     return Root{q.getInt(0), q.getText(1), q.getInt(2) != 0};
+}
+
+void Library::setRootEnabled(std::int64_t id, bool enabled)
+{
+    auto q = db_.prepare("UPDATE roots SET enabled = ? WHERE id = ?");
+    q.bind(1, enabled ? 1 : 0).bind(2, id);
+    q.run();
+}
+
+std::optional<std::pair<Root, std::string>> Library::rootOf(const fs::path& path, bool enabledOnly)
+{
+    if (path.empty()) return std::nullopt;
+    std::error_code ec;
+    const fs::path absolute = fs::absolute(path, ec);
+    if (ec) return std::nullopt;
+    fs::path canonical = fs::weakly_canonical(absolute, ec);
+    if (ec) canonical = absolute;
+    std::string full = toUtf8(canonical);
+    while (full.size() > 1 && full.back() == '/') full.pop_back();
+    std::optional<std::pair<Root, std::string>> best;
+    for (const auto& r : roots()) {
+        if (enabledOnly && !r.enabled) continue;
+        if (best && r.path.size() <= best->first.path.size()) continue;
+        if (full == r.path) {
+            best = std::make_pair(r, std::string());
+            continue;
+        }
+        const std::string prefix = r.path.back() == '/' ? r.path : r.path + "/";
+        if (full.size() > prefix.size() && full.compare(0, prefix.size(), prefix) == 0)
+            best = std::make_pair(r, full.substr(prefix.size()));
+    }
+    return best;
 }
 
 std::vector<FileRecord> Library::filesInRoot(std::int64_t rootId)
@@ -217,7 +253,8 @@ std::optional<FileRecord> Library::fileByAbsolutePath(const fs::path& path)
 std::vector<FileRecord> Library::relinkCandidates(std::string_view contentHash, std::int64_t size)
 {
     auto q = db_.prepare("SELECT " + std::string(kFileColumns)
-                         + " FROM files WHERE status = 'missing' AND content_hash = ? AND size = ? ORDER BY id");
+                         + " FROM files WHERE status = 'missing' AND trashed_by IS NULL AND content_hash = ? AND size = ? "
+                           "ORDER BY id");
     q.bind(1, contentHash).bind(2, size);
     return readFiles(q);
 }

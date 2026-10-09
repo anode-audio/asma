@@ -75,17 +75,25 @@ class Library {
 public:
     explicit Library(Db& db) : db_(db) {}
 
-    // Returns the existing id when the directory is already a root.
+    // Returns the existing id when the directory is already a root, enabling
+    // it again if it was removed.
     std::int64_t addRoot(const std::filesystem::path& dir);
     std::vector<Root> roots();
     std::optional<Root> root(std::int64_t id);
+    // A removed folder is disabled: its samples are hidden everywhere and keep
+    // their data, which comes back when it is enabled again.
+    void setRootEnabled(std::int64_t id, bool enabled);
+    // The deepest folder holding a path (enabled ones only, unless not
+    // `enabledOnly`) and the path inside it, '/' separated; empty for the
+    // folder itself.
+    std::optional<std::pair<Root, std::string>> rootOf(const std::filesystem::path& path, bool enabledOnly = true);
 
     std::vector<FileRecord> filesInRoot(std::int64_t rootId);
     std::optional<FileRecord> fileById(std::int64_t id);
     std::optional<FileRecord> fileByPath(std::int64_t rootId, std::string_view relPath);
     // The file at an absolute path, looked up through the root that contains it.
     std::optional<FileRecord> fileByAbsolutePath(const std::filesystem::path& path);
-    // Missing rows in any root whose content matches.
+    // Missing rows in any root whose content matches; never a trashed one.
     std::vector<FileRecord> relinkCandidates(std::string_view contentHash, std::int64_t size);
     // Ok rows in any root whose content matches: a file moved from a root that
     // has not been rescanned yet still looks present there.
