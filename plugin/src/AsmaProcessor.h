@@ -57,6 +57,9 @@ public:
     // Message thread. Auditions a file as it is, without the last one's edits,
     // and remembers it as the project's selection.
     std::uint64_t select(const std::filesystem::path& path, const audio::SampleInfo& info);
+    // Message thread. Nothing selected: the engine lets go of what it plays
+    // and the project names no sample.
+    void dropSelection();
     // Message thread. The selection's edits: saved with the project and
     // applied at once, restarting what plays.
     void setEdits(const audio::Edits& edits);

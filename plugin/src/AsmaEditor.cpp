@@ -596,27 +596,52 @@ void AsmaEditor::runFileOperation(FileRequest request, int selectRowAfter)
     job->run(std::move(request), [safe = juce::Component::SafePointer<AsmaEditor>(this), kind,
                                   selectRowAfter](const FileOutcome& outcome) {
         if (!safe) return;
+        const std::int64_t had = safe->selected_ ? safe->selected_->id : 0;
         safe->poll(); // the rows follow the library before anything is selected
         if (safe->editMenu_) safe->editMenu_->menuItemsChanged();
-        if (!outcome.done) return;
-        if (kind == FileRequest::Kind::Trash && selectRowAfter >= 0) {
-            // The row that took the trashed sample's place.
+        bool picked = false;
+        if (outcome.done && kind == FileRequest::Kind::Trash && selectRowAfter >= 0) {
+            // The row that took the trashed sample's place plays, as a click on it would.
             const int rows = safe->table_.getNumRows();
             if (const SearchRow* next = rows > 0 ? safe->browser_.row(std::min(selectRowAfter, rows - 1)) : nullptr)
-                safe->selectFile(next->id);
-        } else if (kind == FileRequest::Kind::Undo && !outcome.files.empty()) {
-            safe->selectFile(outcome.files.front());
+                picked = safe->auditionFile(next->id);
+        } else if (outcome.done && kind == FileRequest::Kind::Undo && !outcome.files.empty()) {
+            picked = safe->auditionFile(outcome.files.front());
         }
+        // The sample it showed has left the library (trashed, its folder
+        // removed): nothing plays or shows it any more.
+        if (!picked && had && !safe->library_.row(had)) safe->dropSelection();
     });
 }
 
-void AsmaEditor::selectFile(std::int64_t id)
+bool AsmaEditor::auditionFile(std::int64_t id)
 {
     const auto row = library_.row(id);
-    if (!row) return;
-    const std::string path = toUtf8(LibraryView::pathOf(*row));
-    processor_.updateState([&](PluginState& s) { s.selected = path; });
-    showSelection();
+    if (!row) return false;
+    const juce::String said = scanMessage_; // what the operation did stays in the footer
+    select(*row);
+    scanMessage_ = said;
+    const int at = browser_.rowOf(LibraryView::pathOf(*row));
+    {
+        const juce::ScopedValueSetter quiet(quietSelection_, true); // already playing
+        if (at >= 0) table_.selectRow(at);
+        else table_.deselectAllRows();
+    }
+    selected_ = *row;
+    selectionChanged();
+    updateReadouts();
+    return true;
+}
+
+void AsmaEditor::dropSelection()
+{
+    processor_.dropSelection();
+    {
+        const juce::ScopedValueSetter quiet(quietSelection_, true);
+        table_.deselectAllRows();
+    }
+    selected_.reset();
+    selectionChanged();
     updateReadouts();
 }
 

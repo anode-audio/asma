@@ -149,6 +149,16 @@ std::uint64_t AsmaProcessor::select(const std::filesystem::path& path, const aud
     return engine_.select(path, info, true);
 }
 
+void AsmaProcessor::dropSelection()
+{
+    updateState([](PluginState& s) {
+        s.selected.clear();
+        s.edits = {};
+    });
+    engine_.setEdits({}, false);
+    engine_.select({}, {}, false);
+}
+
 void AsmaProcessor::setEdits(const audio::Edits& edits)
 {
     updateState([&](PluginState& s) { s.edits = edits; });

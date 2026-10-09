@@ -66,6 +66,22 @@ struct App : EditorRig {
         return row ? row->name : std::string();
     }
     juce::String status() { return editor->footer().rightText(); }
+    // Runs audio until the engine plays its newest selection; false after 5 s.
+    bool playingSelection()
+    {
+        juce::AudioBuffer<float> buffer(2, 512);
+        juce::MidiBuffer midi;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline) {
+            p->processBlock(buffer, midi);
+            const auto status = p->engine().status();
+            if (status.playing && status.generation == p->engine().selected()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    }
+    // The file name of the project's selection; empty for none.
+    std::string projectSelection() { return toUtf8(fromUtf8(p->pluginState().selected).filename()); }
 };
 
 std::vector<std::string> items(const juce::PopupMenu& menu)
@@ -223,4 +239,42 @@ TEST_CASE("The Edit menu names what undo would undo", "[filemanager]")
     REQUIRE(again.next());
     CHECK(again.getItem().text == "Undo");
     CHECK_FALSE(again.getItem().isEnabled);
+}
+
+TEST_CASE("After a trash the next sample plays, and after its undo the one brought back", "[filemanager]")
+{
+    App app;
+    app.select("Kick_01.wav");
+    REQUIRE(app.playingSelection());
+    const auto before = app.p->engine().selected();
+    CHECK(app.editor->keyPressed(juce::KeyPress(juce::KeyPress::deleteKey)));
+    app.settle();
+    CHECK(app.p->engine().selected() != before);
+    CHECK(app.projectSelection() == "Snare_02.wav");
+    CHECK(app.playingSelection());
+
+    const auto trashed = app.p->engine().selected();
+    CHECK(app.editor->keyPressed(juce::KeyPress('z', juce::ModifierKeys::commandModifier, 'z')));
+    app.settle();
+    CHECK(app.p->engine().selected() != trashed);
+    CHECK(app.projectSelection() == "Kick_01.wav");
+    CHECK(app.playingSelection());
+}
+
+TEST_CASE("Removing the folder of the sample playing stops it", "[filemanager]")
+{
+    App app;
+    app.select("Kick_01.wav");
+    REQUIRE(app.playingSelection());
+    const auto before = app.p->engine().selected();
+    const int folder = folderEntry(app);
+    REQUIRE(folder >= 0);
+    app.editor->sidebar().entryMenuChosen(folder, SidebarView::kRemoveFolder);
+    app.settle();
+    CHECK(app.p->engine().selected() != before); // the gone sample is dropped
+    CHECK(app.projectSelection().empty());
+    juce::AudioBuffer<float> buffer(2, 512);
+    juce::MidiBuffer midi;
+    for (int i = 0; i < 20; ++i) app.p->processBlock(buffer, midi);
+    CHECK_FALSE(app.p->engine().status().playing);
 }

@@ -147,7 +147,11 @@ private:
     // Runs a file operation; when it is done, selects what it names (or,
     // after a trash, the row that took the sample's place).
     void runFileOperation(FileRequest request, int selectRowAfter = -1);
-    void selectFile(std::int64_t id);
+    // Selects the sample and plays it, as a click on its row would; false
+    // when the library no longer shows it.
+    bool auditionFile(std::int64_t id);
+    // The selection's sample has left the library: nothing plays it any more.
+    void dropSelection();
     void showSelection();   // selects the saved file's row without playing it
     void loadState();       // every control from the processor's state
     void selectionChanged(); // re-reads what the readouts need about the selection
