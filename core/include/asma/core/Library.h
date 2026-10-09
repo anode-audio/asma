@@ -75,6 +75,8 @@ class Library {
 public:
     explicit Library(Db& db) : db_(db) {}
 
+    // A folder as roots store it: absolute, canonical, UTF-8 with '/'.
+    static std::string folderPath(const std::filesystem::path& dir);
     // Returns the existing id when the directory is already a root, enabling
     // it again if it was removed.
     std::int64_t addRoot(const std::filesystem::path& dir);
@@ -100,6 +102,9 @@ public:
     std::vector<FileRecord> okFilesWithContent(std::string_view contentHash, std::int64_t size);
 
     std::int64_t insertFile(const FileRecord& file);
+    // Deletes a file's row and everything it held: features, tags, rating,
+    // favourite and collection membership.
+    void removeFile(std::int64_t id);
     void updateFile(const FileRecord& file); // by file.id, every column
     void setStatus(std::int64_t fileId, FileStatus status, std::string_view reason = {});
     // Content changed: forget analysis output and queue the file again.

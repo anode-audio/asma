@@ -138,13 +138,18 @@ void bindFileColumns(Statement& s, int first, const FileRecord& f)
 
 } // namespace
 
-std::int64_t Library::addRoot(const fs::path& dir)
+std::string Library::folderPath(const fs::path& dir)
 {
     std::error_code ec;
     fs::path canonical = fs::weakly_canonical(fs::absolute(dir), ec);
     if (ec) canonical = fs::absolute(dir);
     if (!canonical.has_filename() && canonical != canonical.root_path()) canonical = canonical.parent_path();
-    const std::string path = toUtf8(canonical);
+    return toUtf8(canonical);
+}
+
+std::int64_t Library::addRoot(const fs::path& dir)
+{
+    const std::string path = folderPath(dir);
 
     auto select = db_.prepare("SELECT id FROM roots WHERE path = ?");
     select.bind(1, std::string_view(path));
@@ -277,6 +282,16 @@ std::int64_t Library::insertFile(const FileRecord& file)
     const auto id = db_.lastInsertId();
     refreshFts(id);
     return id;
+}
+
+void Library::removeFile(std::int64_t id)
+{
+    auto fts = db_.prepare("DELETE FROM fts_files WHERE rowid = ?");
+    fts.bind(1, id);
+    fts.run();
+    auto row = db_.prepare("DELETE FROM files WHERE id = ?");
+    row.bind(1, id);
+    row.run();
 }
 
 void Library::updateFile(const FileRecord& file)

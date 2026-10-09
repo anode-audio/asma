@@ -82,17 +82,6 @@ bool hasUserData(Db& db, std::int64_t fileId)
     return q.step() && q.getInt(0) != 0;
 }
 
-// Deletes a sample's row, its index entry and (by cascade) all it held.
-void forget(Db& db, std::int64_t fileId)
-{
-    auto fts = db.prepare("DELETE FROM fts_files WHERE rowid = ?");
-    fts.bind(1, fileId);
-    fts.run();
-    auto row = db.prepare("DELETE FROM files WHERE id = ?");
-    row.bind(1, fileId);
-    row.run();
-}
-
 bool sameFile(const fs::path& a, const fs::path& b)
 {
     std::error_code ec;
@@ -471,7 +460,7 @@ void FileOps::rollBack(std::int64_t group, const char* state, OpResult& result)
         // gives way; any other keeps its place.
         if (occupant && occupant->id != s.fileId && occupant->status == FileStatus::Missing
             && !hasUserData(db_, occupant->id)) {
-            forget(db_, occupant->id);
+            lib.removeFile(occupant->id);
         } else if (occupant && occupant->id != s.fileId) {
             result.skipped.push_back(failed + "its old place is taken");
             mark(s.id, "failed");
@@ -587,7 +576,8 @@ void FileOps::prune()
         gone.bind(1, group);
         std::vector<std::int64_t> ids;
         while (gone.step()) ids.push_back(gone.getInt(0));
-        for (const auto id : ids) forget(db_, id);
+        Library lib(db_);
+        for (const auto id : ids) lib.removeFile(id);
         auto steps = db_.prepare("DELETE FROM journal WHERE group_id = ?");
         steps.bind(1, group);
         steps.run();
