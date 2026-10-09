@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace asma {
 
@@ -42,6 +43,10 @@ std::filesystem::path defaultDataDir();
 // Last-write time as an opaque integer in the file clock's native ticks. Only
 // meaningful for equality and ordering on the same machine.
 std::int64_t fileTimeToInt(std::filesystem::file_time_type time);
+
+// Renames a file or folder, never over another: a `to` that exists, even
+// one made a moment ago, fails with std::errc::file_exists. Same volume only.
+std::error_code renameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to);
 
 // Which file a path names now, as an opaque string: two calls give the same
 // string unless the file was replaced (renamed over, deleted and made again).

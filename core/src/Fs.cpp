@@ -10,9 +10,17 @@
 #include <optional>
 
 #ifdef _WIN32
+#include <windows.h>
 #include <cwchar>
 #else
+#include <cerrno>
+#include <cstdio>
+#include <fcntl.h>
 #include <sys/types.h>
+#include <unistd.h>
+#endif
+#ifdef __linux__
+#include <sys/syscall.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -99,6 +107,43 @@ std::string fileIdentity(const std::filesystem::path& path)
     if (::stat(path.c_str(), &st) != 0) return {};
     return std::to_string(static_cast<unsigned long long>(st.st_dev)) + ":"
          + std::to_string(static_cast<unsigned long long>(st.st_ino));
+#endif
+}
+
+std::error_code renameNoReplace(const fs::path& from, const fs::path& to)
+{
+#ifdef _WIN32
+    // Without MOVEFILE_REPLACE_EXISTING, Windows never replaces.
+    if (MoveFileExW(from.c_str(), to.c_str(), 0)) return {};
+    const DWORD error = GetLastError();
+    if (error == ERROR_ALREADY_EXISTS || error == ERROR_FILE_EXISTS) return std::make_error_code(std::errc::file_exists);
+    return std::error_code(static_cast<int>(error), std::system_category());
+#else
+    int result = -1;
+#if defined(__APPLE__)
+    result = ::renamex_np(from.c_str(), to.c_str(), RENAME_EXCL);
+#elif defined(__linux__) && defined(SYS_renameat2)
+    result = static_cast<int>(::syscall(SYS_renameat2, AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), 1 /* RENAME_NOREPLACE */));
+    if (result != 0 && (errno == EINVAL || errno == ENOSYS)) {
+        // A file system without it: link then unlink never replaces either.
+        if (::link(from.c_str(), to.c_str()) == 0) {
+            ::unlink(from.c_str());
+            return {};
+        }
+        if (errno == EEXIST) return std::make_error_code(std::errc::file_exists);
+        // Nor links (FAT, some network shares): check, then rename.
+        struct stat st {};
+        if (::lstat(to.c_str(), &st) == 0) return std::make_error_code(std::errc::file_exists);
+        result = ::rename(from.c_str(), to.c_str());
+    }
+#else
+    struct stat st {};
+    if (::lstat(to.c_str(), &st) == 0) return std::make_error_code(std::errc::file_exists);
+    result = ::rename(from.c_str(), to.c_str());
+#endif
+    if (result == 0) return {};
+    if (errno == EEXIST) return std::make_error_code(std::errc::file_exists);
+    return std::error_code(errno, std::generic_category());
 #endif
 }
 
