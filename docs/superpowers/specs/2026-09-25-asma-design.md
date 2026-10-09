@@ -73,10 +73,10 @@ support, speed, and crash isolation.
   waveform display.
 - **Drag out** to DAW or file manager, rendering edits to a WAV when any edit is
   active.
-- **File manager (standalone only):** rename (including batch rename by
-  pattern), move, trash, convert format and sample rate, find duplicates by
-  hash, export a collection to a folder. Every operation is journaled and
-  undoable.
+- **File manager (standalone only), in three plans:** 4a rename, move, trash,
+  remove a folder from the library, and undo; 4b batch rename by pattern and
+  export a collection to a folder; 4c convert format and sample rate, and find
+  duplicates by hash. Every operation is journaled and undoable.
 - **Tempo source:** host transport in the plugin; Ableton Link or a manual BPM
   in the standalone.
 - **Formats:** read WAV, AIFF, FLAC, OGG, MP3; write WAV, AIFF, FLAC.
@@ -120,8 +120,9 @@ SQLite database read directly by every UI instance. No long-lived daemon.
    - `fileops`: planning, preflight, journal, execute, undo.
 2. **`asma-scan`**: worker executable. Wraps `asma-core` `index` and `analysis`,
    reports progress as JSON lines on stdout.
-3. **`asma` CLI**: `scan`, `query`, `similar`, `render`, `dedupe`, `undo`. Used
-   by CI and power users.
+3. **`asma` CLI**: `scan`, `query`, `similar`, `render`, the file operations
+   (`rename`, `move`, `trash`, `remove-folder`, `undo`, `history`), `dedupe`.
+   Used by CI and power users.
 4. **`asma-audio`** (static library, no JUCE): the audition engine of section 8
    and the drag-out renders. Built on `asma-core`'s decoders and Signalsmith
    Stretch, so it runs and tests headless; the plugin's audio callback calls it
@@ -146,17 +147,18 @@ One SQLite database per user in the platform data directory
 (`~/Library/Application Support/Anode Labs/asma/`, `%APPDATA%\Anode Labs\asma\`,
 `$XDG_DATA_HOME/anode-labs/asma/`). WAL mode, versioned migrations.
 
-| Table                             | Contents                                                                                                                                                                                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `roots`                           | id, absolute path, enabled                                                                                                                                                                                                                             |
-| `files`                           | id, root_id, relative path, size, mtime, content_hash (xxh3 over the audio data chunk only, so metadata edits keep the hash), format, sample rate, channels, bit depth, duration, status (`ok`, `missing`, `failed`), failure reason, analysis_version |
-| `features`                        | file_id, bpm, bpm_confidence, key, key_confidence, is_loop, peak, lufs, spectral centroid, rolloff, flatness, onset density, feature_vector (float32 blob)                                                                                             |
-| `tags`, `file_tags`               | tag name; file_id, tag_id, source (`auto`, `embedded`, `user`)                                                                                                                                                                                         |
-| `ratings`, `favourites`           | per file                                                                                                                                                                                                                                               |
-| `collections`, `collection_items` | virtual folders                                                                                                                                                                                                                                        |
-| `saved_searches`                  | serialised search model                                                                                                                                                                                                                                |
-| `fts_files`                       | FTS5 over filename, folder path, tags                                                                                                                                                                                                                  |
-| `journal`                         | id, group_id, op, src, dst, trash_ref, state (`planned`, `done`, `undone`), timestamp                                                                                                                                                                  |
+| Table                             | Contents                                                                                                                                                                                                                                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `roots`                           | id, absolute path, enabled (0 once removed from the library)                                                                                                                                                                                                                                          |
+| `files`                           | id, root_id, relative path, size, mtime, content_hash (xxh3 over the audio data chunk only, so metadata edits keep the hash), format, sample rate, channels, bit depth, duration, status (`ok`, `missing`, `failed`), failure reason, analysis_version, trashed_by (the journal step that trashed it) |
+| `features`                        | file_id, bpm, bpm_confidence, key, key_confidence, is_loop, peak, lufs, spectral centroid, rolloff, flatness, onset density, feature_vector (float32 blob)                                                                                                                                            |
+| `tags`, `file_tags`               | tag name; file_id, tag_id, source (`auto`, `embedded`, `user`)                                                                                                                                                                                                                                        |
+| `ratings`, `favourites`           | per file                                                                                                                                                                                                                                                                                              |
+| `collections`, `collection_items` | virtual folders                                                                                                                                                                                                                                                                                       |
+| `saved_searches`                  | serialised search model                                                                                                                                                                                                                                                                               |
+| `fts_files`                       | FTS5 over filename, folder path, tags                                                                                                                                                                                                                                                                 |
+| `journal_groups`                  | id, label (e.g. "Move 5 Samples"), timestamp, state (`running`, `done`, `undone`, `rolled_back`)                                                                                                                                                                                                      |
+| `journal`                         | id, group_id, op, file_id, src, dst, trash_ref, state (`planned`, `done`, `undone`, `failed`), timestamp                                                                                                                                                                                              |
 
 Rules:
 
@@ -166,6 +168,10 @@ Rules:
   them with all user data.
 - Bumping `analysis_version` triggers lazy background re-analysis of affected
   rows.
+- Removing a folder disables its root and keeps its rows; trashing a sample sets
+  `trashed_by` and keeps its row. Both are hidden everywhere (table, counts,
+  facets, collections, similar, watching and scans) and keep their user data, so
+  re-adding the folder or undoing the trash brings everything back.
 
 ## 6. Data flow
 
@@ -220,8 +226,9 @@ and one deleted or renamed outside asma goes or follows.
 
 Only `asma-scan`, `asma retry`, `asma repair` and standalone file operations
 take the writer lock. A lock file in the data directory holds the writer's PID;
-a stale lock (dead PID) is taken over. File operations wait for a running scan
-to finish, or pause it.
+a stale lock (dead PID) is taken over. File operations wait up to 30 seconds for
+a running scan to finish, then give up with "the library is busy scanning; try
+again in a moment".
 
 User data (ratings, favourites, user tags, collections, saved searches) is
 written in short transactions without the writer lock, so rating a sample never
@@ -236,20 +243,105 @@ files it is given, as a scan would.
 
 ### File operations
 
-1. **Plan:** build the full list of source and destination pairs.
-2. **Preflight:** check permissions, free space and name conflicts for every
-   item; show a preview; nothing touches disk if any check fails.
-3. **Journal:** write all rows as `planned` under one `group_id`.
-4. **Execute:** perform each operation on disk, then mark it `done` and update
-   `files` in the same transaction.
-5. **Undo:** Ctrl/Cmd+Z reverses the most recent group in reverse order (trash
-   items are restored from the OS trash).
-6. **Recovery:** on startup, any group with `planned` rows is completed or
-   rolled back so disk and database agree.
+Standalone only; a plugin window offers none of them and shows the library as it
+is. Plan 4a covers rename, move, trash, removing a folder and undo; 4b and 4c
+add batch rename, export, conversion and duplicates on the same engine.
 
-Delete always means move to OS trash. If the trash is unavailable (some Linux
-setups, network volumes) the delete is refused with a clear message; there is no
-permanent-delete fallback.
+**The engine** (`asma-core` `fileops`, JUCE-free) runs every operation in four
+stages under the writer lock:
+
+1. **Plan:** turn the request into steps, each a file id with its source and
+   destination.
+2. **Preflight:** check every step before anything touches disk: the source
+   exists and its size and mtime match its row; the destination is free and
+   inside an enabled root; a trash exists for the volume. If any check fails the
+   whole group is refused, naming the files ("3 of 12 samples already exist in
+   Drums: kick.wav, snare.wav, hat.wav"). A name that is taken is never replaced
+   and never given a suffix. A rename that changes only letter case is allowed,
+   through a temporary name. A rename keeps the extension; another extension is
+   refused, since a rename never converts.
+3. **Journal:** write the group (`running`, with its label) and its steps
+   (`planned`) in one transaction.
+4. **Execute:** for each step, do the filesystem operation, then in one
+   transaction mark the step `done` and update the file's row (root, relative
+   path, name; `trashed_by` for a trash). Ids never change, so ratings, tags and
+   collections follow the file. The group ends `done`.
+
+In 4a every step is a rename on one volume, so a crash never leaves half a copy:
+moving between volumes is refused ("moving between disks comes with export").
+
+**Undo:** Cmd/Ctrl+Z (outside text fields) and the Edit menu ("Undo Move 5
+Samples") reverse the newest `done` group, step by step in reverse order. A
+trashed file is restored from its `trash_ref` and its `trashed_by` cleared. A
+step that cannot be reversed (the file is no longer where the step left it, its
+old place is taken, the trash was emptied) is marked `failed`, skipped and
+reported; the rest of the group is undone. The group becomes `undone`. The
+journal lives in the library, so undo survives a restart. The newest 50 groups
+are kept; when an older one is pruned, the rows of the samples it trashed are
+deleted for good. There is no redo.
+
+**Recovery:** at startup of the standalone and of every CLI write command, a
+group still `running` is undone the same way and marked `rolled_back`; the
+footer says "asma was interrupted while moving 12 samples; they are back where
+they were", listing any step that could not be reversed.
+
+**Trash:** delete always means the system's trash, through one backend per
+platform that reports where the file went: `trashItemAtURL:resultingItemURL:` on
+macOS (Foundation, no JUCE); `IFileOperation` with `FOFX_RECYCLEONDELETE` and a
+progress sink on Windows; the freedesktop Trash specification on Linux, written
+directly (`$XDG_DATA_HOME/Trash`, or `$topdir/.Trash/$uid` and
+`$topdir/.Trash-$uid` on other volumes, with a `.trashinfo` per file). Restoring
+is a rename back. If no trash exists for a volume (some network and removable
+drives, Linux volumes where neither trash folder can be made) the trash is
+refused with a clear message ("Samples on Untitled can't go to the Trash;
+nothing was moved"); there is no permanent-delete fallback, and asma never
+deletes a sample.
+
+**Removing a folder** from the library disables its root: its samples leave the
+table, counts and collections, keep their user data, and are no longer watched
+or scanned. Re-adding the folder, or a folder containing it, enables it again,
+and the scan that follows reconciles as usual. Removing a folder is journaled,
+so Cmd/Ctrl+Z puts it back. The backup carries the data of disabled roots and
+trashed samples too.
+
+**Overlapping folders:** adding a folder inside one already in the library is
+refused ("Drums is already in the library, inside Samples"). Adding a folder
+that contains roots asks "Samples contains 2 folders already in the library
+(Drums, Bass). Add Samples in their place?"; yes merges them in one transaction
+(each inner file's root changes and its relative path gains the inner folder's
+name; ids stay), and the scan of the new root indexes only what is new. A
+library that already has nested roots is merged once at the standalone's
+startup, with a footer note ("Merged Drums and Bass into Samples, which contains
+them"). In the CLI, `asma add` on a containing folder needs `--merge`.
+
+**In the standalone:**
+
+- **Rename:** F2, Enter on a single selection, or "Rename…" in the row menu
+  opens the name popover with the name selected up to its extension. A taken
+  name, an invalid character or another extension turns the field red with the
+  reason.
+- **Move:** "Move to…" in the row menu, on the selection, opens a native folder
+  chooser at the first sample's folder. A destination outside the library's
+  folders, or a refusal from preflight, is said in the footer.
+- **Trash:** Delete or Backspace, or "Move to Trash" in the row menu, with no
+  confirmation: "Moved 3 samples to the Trash. Cmd+Z to undo." (Ctrl+Z off
+  macOS).
+- **Remove from Library:** in a sidebar folder's menu, with no confirmation:
+  "Removed Samples from the library. Cmd+Z to undo."
+- **Selection:** moved and renamed samples stay selected; after a trash the next
+  row is selected; after an undo, the restored samples.
+- Operations run one at a time on a background thread; the window is never
+  blocked and the view refreshes when a group commits.
+
+**Watching and scans:** an operation holds the writer lock, so no scan runs
+during it; the scan the watcher then asks for finds the rows already updated and
+says nothing. An undo checks each file at the place its step left it; a file
+edited there since is still moved back.
+
+**CLI:** `asma rename FILE NEWNAME`, `asma move FILE... --to FOLDER`,
+`asma trash FILE...`, `asma remove-folder FOLDER`, `asma undo` and
+`asma history`, each with `--json` for one JSON line, exiting 3 when another
+process holds the writer lock.
 
 ## 7. Analysis
 
@@ -364,8 +456,8 @@ Problems panel (approved for 3c2b2).
 - **Footer:** what a drag-out carries ("the original file", or e.g. "reversed,
   trimmed, stretched to 180 BPM"), the scan's progress and outcome, the kept
   renders' size and "Clear renders".
-- **File operations (plan 4):** context menu and batch dialogs, always with a
-  preview; Ctrl/Cmd+Z undoes.
+- **File operations (plan 4):** the row menu, keys and (4b, 4c) batch dialogs
+  with a preview; Ctrl/Cmd+Z undoes. Section 6 "File operations" has 4a's.
 - **Problems panel (3c2b2):** files that failed to decode or analyse, with the
   reason and a retry action, in place of the table.
 
@@ -561,8 +653,12 @@ without playing, with its tempo and key from the library.
   counted in the footer ("12 organised samples were not found"), and stay in the
   backup and the `.corrupt` file. Unknown fields from another asma version are
   ignored. `asma check` runs the check by hand.
-- **File operation failure mid-group:** execution stops, the group is left
-  partially `done`, and the user is offered undo of the completed part.
+- **File operation failure mid-group:** a step that fails (the file was changed
+  or removed by something else) stops the group, which is rolled back as after a
+  crash; the footer names the file. A group never ends half done.
+- **Damage during a file operation:** the operation stops; files already moved
+  stay moved. A rebuilt library has no journal (it is not in the backup), so
+  undo history is lost; the scan finds the files where they are.
 - **Trash unavailable:** delete refused, no fallback.
 - **Streaming failure:** anything reading ahead in a streamed file throws ends
   streaming for that file only: it plays silence where it could not read, and
