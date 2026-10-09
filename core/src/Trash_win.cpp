@@ -130,11 +130,16 @@ TrashResult moveToTrash(const fs::path& file)
         result.error = "cannot reach the Recycle Bin";
         return result;
     }
-    op->SetOperationFlags(FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI | FOFX_RECYCLEONDELETE
-                          | FOFX_EARLYFAILURE);
+    // The sink is the only guard against a delete that would not recycle:
+    // without it, or without these flags, nothing is deleted at all.
     Sink sink;
     DWORD cookie = 0;
-    op->Advise(&sink, &cookie);
+    if (FAILED(op->SetOperationFlags(FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
+                                     | FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE))
+        || FAILED(op->Advise(&sink, &cookie))) {
+        result.error = "cannot reach the Recycle Bin";
+        return result;
+    }
     const HRESULT queued = op->DeleteItem(item.p, nullptr);
     const HRESULT done = SUCCEEDED(queued) ? op->PerformOperations() : queued;
     BOOL aborted = FALSE;
