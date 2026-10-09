@@ -36,6 +36,16 @@ Ratings, favourites, tags, collections and saved searches:
     asma query --saved "Fast loops" --sort rating --desc
     asma retry ~/Samples/Drums/broken.wav       # read a failed file again
 
+Moving files, each undoable as one, and taking folders out of the library:
+
+    asma rename ~/Samples/Drums/Kick_01.wav Kick_Dusty.wav
+    asma move ~/Samples/Drums/Kick_Dusty.wav --to ~/Samples/Keep
+    asma trash ~/Samples/Drums/Snare_03.wav      # to the system's trash
+    asma remove-folder ~/Samples/Old            # its samples' data is kept
+    asma undo                                   # the last of these, as a whole
+    asma history
+    asma root add --merge ~/Samples             # in place of the folders inside it
+
 Keeping the library safe:
 
     asma check                   # is the library sound?
@@ -109,6 +119,17 @@ keeps the search in force. When files cannot be read or analysed, Problems
 appears in the sidebar: its panel lists each with the reason, and Retry reads it
 again. Changes show at once; in a plugin, which never writes the library inside
 the host, the `asma-cli` helper shipped beside it makes them.
+
+The app also manages the files themselves. F2 or Rename… in a row's menu renames
+the selected sample, Move to… puts it in another library folder, and Delete,
+Backspace or Move to Trash sends it to the system's trash; Cmd+Z (Ctrl+Z off
+macOS) undoes the last of these, and the footer says what each did. A sample
+keeps its ratings, tags and collections wherever it goes, and asma never
+replaces a file or deletes one. Remove from Library, in a folder's menu in the
+sidebar, takes a folder out without touching its files, and its samples' data
+comes back if you add it again. Adding a folder inside one already in the
+library is refused; adding one that holds library folders asks to take their
+place. A plugin window leaves files alone.
 
 While any asma window is open, the app's or a plugin's, the library follows its
 folders: a sample dropped into one appears within seconds, and one deleted or

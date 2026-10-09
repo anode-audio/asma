@@ -270,9 +270,9 @@ stages under the writer lock:
 In 4a every step is a rename on one volume, so a crash never leaves half a copy:
 moving between volumes is refused ("moving between disks comes with export").
 
-**Undo:** Cmd/Ctrl+Z (outside text fields) and the Edit menu ("Undo Move 5
-Samples") reverse the newest `done` group, step by step in reverse order. A
-trashed file is restored from its `trash_ref` and its `trashed_by` cleared. A
+**Undo:** Cmd/Ctrl+Z (outside text fields) and, on macOS, the Edit menu ("Undo
+Move 5 Samples") reverse the newest `done` group, step by step in reverse order.
+A trashed file is restored from its `trash_ref` and its `trashed_by` cleared. A
 step that cannot be reversed (the file is no longer where the step left it, its
 old place is taken, the trash was emptied) is marked `failed`, skipped and
 reported; the rest of the group is undone. The group becomes `undone`. The
@@ -316,10 +316,10 @@ them"). In the CLI, `asma add` on a containing folder needs `--merge`.
 
 **In the standalone:**
 
-- **Rename:** F2, Enter on a single selection, or "Rename…" in the row menu
-  opens the name popover with the name selected up to its extension. A taken
-  name, an invalid character or another extension turns the field red with the
-  reason.
+- **Rename:** F2 or "Rename…" in the row menu opens the name popover with the
+  name selected up to its extension (Enter keeps playing the selection, as
+  before). A taken name, an invalid character or another extension turns the
+  field red with the reason.
 - **Move:** "Move to…" in the row menu, on the selection, opens a native folder
   chooser at the first sample's folder. A destination outside the library's
   folders, or a refusal from preflight, is said in the footer.
@@ -328,6 +328,9 @@ them"). In the CLI, `asma add` on a containing folder needs `--merge`.
   macOS).
 - **Remove from Library:** in a sidebar folder's menu, with no confirmation:
   "Removed Samples from the library. Cmd+Z to undo."
+- **One sample at a time:** the table selects one row, so the window's
+  operations act on that sample; the CLI takes many, and 4b brings batch work to
+  the window.
 - **Selection:** moved and renamed samples stay selected; after a trash the next
   row is selected; after an undo, the restored samples.
 - Operations run one at a time on a background thread; the window is never
@@ -658,7 +661,9 @@ without playing, with its tempo and key from the library.
   crash; the footer names the file. A group never ends half done.
 - **Damage during a file operation:** the operation stops; files already moved
   stay moved. A rebuilt library has no journal (it is not in the backup), so
-  undo history is lost; the scan finds the files where they are.
+  undo history is lost; the scan finds the files where they are. The backup
+  lists every folder, removed ones too, so a rebuild brings removed folders
+  back.
 - **Trash unavailable:** delete refused, no fallback.
 - **Streaming failure:** anything reading ahead in a streamed file throws ends
   streaming for that file only: it plays silence where it could not read, and
