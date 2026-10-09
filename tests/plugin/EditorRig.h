@@ -10,6 +10,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <thread>
 
@@ -20,10 +21,13 @@ struct EditorRig {
     const juce::ScopedJuceInitialiser_GUI gui;
     std::unique_ptr<app::AsmaProcessor> p;
     std::unique_ptr<app::AsmaEditor> editor;
-    explicit EditorRig(app::AsmaProcessor::Mode mode = app::AsmaProcessor::Mode::FromWrapper)
+    // `setUp` sees the processor before the window opens.
+    explicit EditorRig(app::AsmaProcessor::Mode mode = app::AsmaProcessor::Mode::FromWrapper,
+                       const std::function<void(app::AsmaProcessor&)>& setUp = {})
     {
         f.scan();
         p = std::make_unique<app::AsmaProcessor>(mode);
+        if (setUp) setUp(*p);
         p->prepareToPlay(48000.0, 512);
         editor.reset(dynamic_cast<app::AsmaEditor*>(p->createEditorAndMakeActive()));
         REQUIRE(editor);

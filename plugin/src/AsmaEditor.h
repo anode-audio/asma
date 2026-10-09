@@ -2,6 +2,7 @@
 #pragma once
 
 #include "Browser.h"
+#include "FileOpsJob.h"
 #include "LibraryKeeper.h"
 #include "LibraryView.h"
 #include "LibraryWriter.h"
@@ -10,6 +11,7 @@
 #include "Sidebar.h"
 #include "ui/AsmaLookAndFeel.h"
 #include "ui/ChipRow.h"
+#include "ui/EditMenu.h"
 #include "ui/FilterPopovers.h"
 #include "ui/Footer.h"
 #include "ui/NamePopover.h"
@@ -101,12 +103,24 @@ public:
     // A row's right-click menu: Add to collection (ticking those it is in,
     // and New collection…), Tags… and Show in Finder (Explorer, the file
     // manager); and what picking an item does.
+    // In the standalone it also offers Rename…, Move to… and Move to Trash.
     juce::PopupMenu rowMenu(const SearchRow& row);
     void rowMenuChosen(const SearchRow& row, int result);
-    enum RowMenuItem { kNewCollection = 1, kEditTags, kReveal, kFirstCollection = 100 };
+    enum RowMenuItem { kNewCollection = 1, kEditTags, kReveal, kRename, kMoveTo, kTrash, kFirstCollection = 100 };
     static juce::String revealText();
     // A sample's tags to change, as Tags… opens it.
     std::unique_ptr<TagsPopover> tagsPopover(const SearchRow& row);
+
+    // The standalone's file operations (spec section 6), each run by the
+    // processor's FileOpsJob; the footer says what came of it. F2 renames,
+    // Delete or Backspace trashes, Cmd/Ctrl+Z undoes (outside text fields).
+    std::unique_ptr<NamePopover> renamePopover(const SearchRow& row);
+    void moveSample(const SearchRow& row, const std::filesystem::path& folder); // the chooser ends here
+    void trashSample(const SearchRow& row);
+    void undoFileOperation();
+    // Asks whether a folder holding library folders takes their place; the
+    // app asks in a dialog, tests answer themselves.
+    std::function<void(const juce::String& question, std::function<void(bool)> answer)> confirmMerge;
 
 private:
     enum Column { kFavourite = 1, kName, kType, kBpm, kKey, kLength, kRating, kTags };
@@ -128,6 +142,12 @@ private:
     void showSort(const SearchModel& model); // the header's arrow on the search's sort
     void syncChanged(const audio::SyncSettings& sync);
     void chooseFolder();
+    void chooseDestination(const SearchRow& row);
+    void showRename(const SearchRow& row);
+    // Runs a file operation; when it is done, selects what it names (or,
+    // after a trash, the row that took the sample's place).
+    void runFileOperation(FileRequest request, int selectRowAfter = -1);
+    void selectFile(std::int64_t id);
     void showSelection();   // selects the saved file's row without playing it
     void loadState();       // every control from the processor's state
     void selectionChanged(); // re-reads what the readouts need about the selection
@@ -151,6 +171,8 @@ private:
     LibraryView library_;
     std::shared_ptr<LibraryKeeper> keeper_;
     std::uint64_t keeperMessages_ = 0; // the keeper's messages this window has shown
+    std::uint64_t fileOpsMessages_ = 0; // the file operations' messages it has shown
+    std::unique_ptr<EditMenu> editMenu_; // the standalone's, on macOS
     Browser browser_{library_};
     TopBar top_;
     SidebarView sidebar_;

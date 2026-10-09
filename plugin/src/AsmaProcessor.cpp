@@ -31,6 +31,13 @@ AsmaProcessor::AsmaProcessor(Mode mode)
 
 AsmaProcessor::~AsmaProcessor() = default;
 
+FileOpsJob* AsmaProcessor::fileOps()
+{
+    if (!standalone_) return nullptr;
+    if (!fileOps_) fileOps_ = std::make_unique<FileOpsJob>(libraryPath_, trash_);
+    return fileOps_.get();
+}
+
 void AsmaProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     // Kept rather than read back with getSampleRate(), which is 0 until a

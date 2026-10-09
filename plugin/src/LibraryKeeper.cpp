@@ -67,23 +67,6 @@ std::shared_ptr<LibraryKeeper> LibraryKeeper::shared(const std::filesystem::path
     return made;
 }
 
-bool LibraryKeeper::addFolder(const std::filesystem::path& folder, std::string* error)
-{
-    std::error_code ec;
-    if (!std::filesystem::is_directory(folder, ec)) {
-        if (error) *error = "not a folder";
-        return false;
-    }
-    try {
-        Db db = Db::open(dbPath_);
-        Library(db).addRoot(folder); // seen at the next tick, and scanned first
-    } catch (const std::exception& e) {
-        if (error) *error = e.what();
-        return false;
-    }
-    return true;
-}
-
 void LibraryKeeper::folderChanged(std::int64_t rootId)
 {
     const std::lock_guard lock(changedMutex_);

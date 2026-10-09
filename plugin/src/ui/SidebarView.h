@@ -35,6 +35,8 @@ public:
     std::function<std::optional<juce::String>(int index, const juce::String& name)> nameRefusal;
     std::function<void(int index, const juce::String& name)> onNamed;
     std::function<void(int index)> onDelete;
+    // Set in the standalone: a folder's menu offers Remove from Library.
+    std::function<void(int index)> onRemoveFolder;
     // A new collection's field was dropped (Escape, or another field opened).
     std::function<void()> onNewCancelled;
 
@@ -52,7 +54,7 @@ public:
     // What the menu's choice does once it is made.
     std::function<void(int result)> entryMenuHandler(int index);
     juce::Label& refusalLabel() { return refusalLabel_; }
-    enum MenuItem { kRename = 1, kDelete };
+    enum MenuItem { kRename = 1, kDelete, kRemoveFolder };
 
     int rowCount() const { return rows_.size(); }
     juce::Button& row(int index) { return *rows_[index]; }

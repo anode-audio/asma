@@ -316,7 +316,8 @@ TEST_CASE("a row's menu ticks the collections it is in, and picking one adds or 
     const SearchRow kick = *rig.editor->shownRow(0);
     const auto menu = rig.editor->rowMenu(kick);
     CHECK(topItems(menu) == std::vector<std::string>{"Add to collection", "Tags\u2026",
-                                                      AsmaEditor::revealText().toStdString()});
+                                                      AsmaEditor::revealText().toStdString(), "Rename\u2026",
+                                                      "Move to\u2026", "Move to Trash"});
     CHECK(collectionItems(menu) == std::vector<std::string>{"Album", "+Live set", "New collection\u2026"});
 
     rig.editor->rowMenuChosen(kick, itemId(menu, "Album"));

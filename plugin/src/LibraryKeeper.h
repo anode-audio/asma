@@ -55,8 +55,6 @@ public:
         return safety_ == Safety::Idle && helper_.idle() && !(damageSuspected_ && lastTick_ >= retryAt_);
     }
 
-    // The standalone's Add folder: adds it to the library and scans it next.
-    bool addFolder(const std::filesystem::path& folder, std::string* error = nullptr);
     // What the footer says while a scan runs; empty otherwise.
     std::string progress() const { return runner_->progress(); }
     // The last scan's news ("Scan finished: 3 added", "Scan failed: ..."),

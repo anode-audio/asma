@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include "FileOpsJob.h"
 #include "LibraryWriter.h"
 #include "PluginState.h"
 #include "asma/audio/AuditionEngine.h"
@@ -96,6 +97,12 @@ public:
     // What the user adds to the library goes through here: written directly
     // in the standalone, by the asma helper in a plugin.
     LibraryWriter& writer() { return *writer_; }
+    // The standalone's file operations, made on first use; null in a plugin,
+    // which never moves files. Message thread.
+    FileOpsJob* fileOps();
+    // The trash file operations use, before the first fileOps(): tests keep
+    // to a folder of their own.
+    void setTrash(TrashBackend trash) { trash_ = std::move(trash); }
 
 private:
     // One preview cache for every instance in the process.
@@ -108,6 +115,8 @@ private:
     std::unique_ptr<ableton::Link> link_; // standalone only
     std::filesystem::path binary_;
     std::unique_ptr<LibraryWriter> writer_;
+    TrashBackend trash_ = TrashBackend::system();
+    std::unique_ptr<FileOpsJob> fileOps_; // standalone only, once asked for
     static constexpr double kDefaultBpm = 120.0; // the standalone's tempo until set
     std::atomic<bool> linkOn_{false};
     std::atomic<double> manualBpm_{0.0};

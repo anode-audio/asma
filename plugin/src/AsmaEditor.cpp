@@ -5,6 +5,8 @@
 #include "DragOut.h"
 #include "TempoChip.h"
 #include "asma/audio/Render.h"
+#include "asma/core/FileOps.h"
+#include "asma/core/Folders.h"
 #include "asma/core/Fs.h"
 #include "ui/TableRows.h"
 #include "ui/Theme.h"
@@ -89,6 +91,28 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
         top_.linkChip().onClick = [this] { processor_.setLinkEnabled(top_.linkChip().getToggleState()); };
         top_.addFolderButton().onClick = [this] { chooseFolder(); };
         emptyAddFolder_.onClick = [this] { chooseFolder(); };
+        sidebar_.onRemoveFolder = [this](int index) {
+            if (index < 0 || index >= static_cast<int>(entries_.size())) return;
+            const auto& entry = entries_[static_cast<std::size_t>(index)];
+            if (entry.kind == EntryKind::Folder) runFileOperation(FileRequest::removeFolder(entry.id));
+        };
+        confirmMerge = [this](const juce::String& question, std::function<void(bool)> answer) {
+            juce::NativeMessageBox::showOkCancelBox(
+                juce::MessageBoxIconType::QuestionIcon, "Add folder", question, this,
+                juce::ModalCallbackFunction::create([answer](int ok) { answer(ok != 0); }));
+        };
+#if JUCE_MAC
+        // Only the app has a menu bar to put it in; the tests have no app.
+        if (juce::JUCEApplicationBase::getInstance() != nullptr) {
+            editMenu_ = std::make_unique<EditMenu>(
+                [this] {
+                    auto* job = processor_.fileOps();
+                    return job ? job->undoLabel() : std::string();
+                },
+                [this] { undoFileOperation(); });
+            juce::MenuBarModel::setMacMainMenu(editMenu_.get());
+        }
+#endif
     }
 
     auto& header = table_.getHeader();
@@ -171,6 +195,9 @@ AsmaEditor::AsmaEditor(AsmaProcessor& owner)
 AsmaEditor::~AsmaEditor()
 {
     stopTimer();
+#if JUCE_MAC
+    if (editMenu_) juce::MenuBarModel::setMacMainMenu(nullptr);
+#endif
     setLookAndFeel(nullptr);
 }
 
@@ -262,6 +289,25 @@ bool AsmaEditor::keyPressed(const juce::KeyPress& key)
     // in it; this is for keys that reach the window from anywhere else.
     const int c = key.getTextCharacter() != 0 ? static_cast<int>(key.getTextCharacter()) : key.getKeyCode();
     const bool typing = dynamic_cast<juce::TextEditor*>(juce::Component::getCurrentlyFocusedComponent()) != nullptr;
+    // The standalone's file operations: Cmd/Ctrl+Z undoes the last, F2
+    // renames the selection, Delete or Backspace trashes it.
+    if (!typing && processor_.fileOps()) {
+        const auto mods = key.getModifiers();
+        if ((c == 'z' || c == 'Z') && mods.isCommandDown() && !mods.isShiftDown()) {
+            undoFileOperation();
+            return true;
+        }
+        if (selected_ && !mods.isCommandDown()) {
+            if (key.getKeyCode() == juce::KeyPress::F2Key) {
+                showRename(*selected_);
+                return true;
+            }
+            if (key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey) {
+                trashSample(*selected_);
+                return true;
+            }
+        }
+    }
     if (!typing && selected_ && !key.getModifiers().isCommandDown() && !key.getModifiers().isCtrlDown()) {
         const auto row = pending_.apply(*selected_);
         if (c == 'f' || c == 'F') {
@@ -438,6 +484,12 @@ juce::PopupMenu AsmaEditor::rowMenu(const SearchRow& row)
     menu.addItem(kEditTags, juce::String::fromUTF8("Tags…"));
     menu.addSeparator();
     menu.addItem(kReveal, revealText());
+    if (processor_.fileOps()) {
+        menu.addSeparator();
+        menu.addItem(kRename, juce::String::fromUTF8("Rename…"));
+        menu.addItem(kMoveTo, juce::String::fromUTF8("Move to…"));
+        menu.addItem(kTrash, "Move to Trash");
+    }
     return menu;
 }
 
@@ -452,6 +504,12 @@ void AsmaEditor::rowMenuChosen(const SearchRow& row, int result)
         juce::CallOutBox::launchAsynchronously(tagsPopover(row), area, this);
     } else if (result == kReveal) {
         juce::File(utf8(toUtf8(LibraryView::pathOf(row)))).revealToUser();
+    } else if (result == kRename) {
+        showRename(row);
+    } else if (result == kMoveTo) {
+        chooseDestination(row);
+    } else if (result == kTrash) {
+        trashSample(row);
     } else if (result >= kFirstCollection) {
         const auto index = static_cast<std::size_t>(result - kFirstCollection);
         if (index >= menuCollections_.size()) return;
@@ -474,6 +532,92 @@ std::unique_ptr<TagsPopover> AsmaEditor::tagsPopover(const SearchRow& row)
                                          [this, id = row.id](const std::string& tag, bool added) {
                                              changeTag(id, tag, added);
                                          });
+}
+
+std::unique_ptr<NamePopover> AsmaEditor::renamePopover(const SearchRow& row)
+{
+    const auto folder = LibraryView::pathOf(row).parent_path();
+    auto refusal = [current = row.name, folder](const juce::String& text) -> std::optional<juce::String> {
+        const std::string name = text.toStdString();
+        if (name.empty() || name == current) return juce::String(); // nothing to say yet
+        if (const auto problem = renameProblem(current, name)) return utf8(*problem);
+        std::error_code ec;
+        const bool caseOnly = juce::String(name).equalsIgnoreCase(juce::String(current));
+        if (!caseOnly && std::filesystem::exists(std::filesystem::symlink_status(folder / fromUtf8(name), ec)))
+            return utf8(name + " already exists in " + toUtf8(folder.filename()) + ".");
+        return std::nullopt;
+    };
+    auto popover = std::make_unique<NamePopover>("Rename", utf8(row.name), std::move(refusal),
+                                                 [this, id = row.id](const juce::String& name) {
+                                                     runFileOperation(FileRequest::rename(id, name.toStdString()));
+                                                 });
+    // The name selected up to its extension, ready to type over.
+    const auto dot = row.name.rfind('.');
+    const int stem = static_cast<int>(utf8(row.name.substr(0, dot == std::string::npos ? row.name.size() : dot)).length());
+    popover->field().setHighlightedRegion({0, stem});
+    return popover;
+}
+
+void AsmaEditor::showRename(const SearchRow& row)
+{
+    const int at = browser_.rowOf(LibraryView::pathOf(row));
+    const auto area = at >= 0 ? getLocalArea(&table_, table_.getRowPosition(at, true)) : table_.getBounds();
+    juce::CallOutBox::launchAsynchronously(renamePopover(row), area, this);
+}
+
+void AsmaEditor::chooseDestination(const SearchRow& row)
+{
+    chooser_ = std::make_unique<juce::FileChooser>("Move to",
+                                                   juce::File(utf8(toUtf8(LibraryView::pathOf(row).parent_path()))));
+    chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this, row](const juce::FileChooser& chooser) {
+                              const juce::File folder = chooser.getResult();
+                              if (folder != juce::File()) moveSample(row, fromUtf8(folder.getFullPathName().toStdString()));
+                          });
+}
+
+void AsmaEditor::moveSample(const SearchRow& row, const std::filesystem::path& folder)
+{
+    runFileOperation(FileRequest::move({row.id}, folder));
+}
+
+void AsmaEditor::trashSample(const SearchRow& row)
+{
+    runFileOperation(FileRequest::trash({row.id}), browser_.rowOf(LibraryView::pathOf(row)));
+}
+
+void AsmaEditor::undoFileOperation() { runFileOperation(FileRequest::undo()); }
+
+void AsmaEditor::runFileOperation(FileRequest request, int selectRowAfter)
+{
+    auto* job = processor_.fileOps();
+    if (!job) return;
+    const auto kind = request.kind;
+    job->run(std::move(request), [safe = juce::Component::SafePointer<AsmaEditor>(this), kind,
+                                  selectRowAfter](const FileOutcome& outcome) {
+        if (!safe) return;
+        safe->poll(); // the rows follow the library before anything is selected
+        if (safe->editMenu_) safe->editMenu_->menuItemsChanged();
+        if (!outcome.done) return;
+        if (kind == FileRequest::Kind::Trash && selectRowAfter >= 0) {
+            // The row that took the trashed sample's place.
+            const int rows = safe->table_.getNumRows();
+            if (const SearchRow* next = rows > 0 ? safe->browser_.row(std::min(selectRowAfter, rows - 1)) : nullptr)
+                safe->selectFile(next->id);
+        } else if (kind == FileRequest::Kind::Undo && !outcome.files.empty()) {
+            safe->selectFile(outcome.files.front());
+        }
+    });
+}
+
+void AsmaEditor::selectFile(std::int64_t id)
+{
+    const auto row = library_.row(id);
+    if (!row) return;
+    const std::string path = toUtf8(LibraryView::pathOf(*row));
+    processor_.updateState([&](PluginState& s) { s.selected = path; });
+    showSelection();
+    updateReadouts();
 }
 
 void AsmaEditor::changeTag(std::int64_t fileId, const std::string& tag, bool added)
@@ -559,9 +703,28 @@ void AsmaEditor::chooseFolder()
 void AsmaEditor::addFolder(const std::filesystem::path& folder)
 {
     if (!processor_.isStandalone()) return;
-    std::string why;
-    scanMessage_ = keeper_->addFolder(folder, &why) ? juce::String() : juce::String("Cannot add that folder: ") + why;
-    updateReadouts();
+    const auto refuse = [this](const juce::String& why) {
+        scanMessage_ = why;
+        updateReadouts();
+    };
+    std::error_code ec;
+    if (!std::filesystem::is_directory(folder, ec)) return refuse("Cannot add that folder: not a folder");
+    AddCheck check;
+    try {
+        Db db = Db::open(processor_.libraryPath());
+        check = checkAddFolder(db, folder);
+    } catch (const std::exception& e) {
+        return refuse(juce::String("Cannot add that folder: ") + e.what());
+    }
+    if (check.result == AddCheck::Result::Inside) return refuse(utf8(check.message));
+    if (check.result == AddCheck::Result::Contains) {
+        // It takes the place of the folders inside it, if the user says so.
+        confirmMerge(utf8(check.message), [safe = juce::Component::SafePointer<AsmaEditor>(this), folder](bool yes) {
+            if (safe && yes) safe->runFileOperation(FileRequest::addFolder(folder, true));
+        });
+        return;
+    }
+    runFileOperation(FileRequest::addFolder(folder, false));
 }
 
 void AsmaEditor::clearRenders()
@@ -608,6 +771,10 @@ void AsmaEditor::poll()
     if (keeper_->messageCount() != keeperMessages_) {
         keeperMessages_ = keeper_->messageCount();
         scanMessage_ = utf8(keeper_->message());
+    }
+    if (auto* job = processor_.fileOps(); job && job->messageCount() != fileOpsMessages_) {
+        fileOpsMessages_ = job->messageCount();
+        scanMessage_ = utf8(job->message());
     }
     if (browser_.poll()) {
         pending_.libraryChanged();

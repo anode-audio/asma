@@ -178,7 +178,7 @@ void SidebarView::setEntries(std::vector<SidebarEntry> entries)
         row->onClick = [this, i] {
             if (onPick) onPick(static_cast<int>(i));
         };
-        if (e.kind == EntryKind::Collection || e.kind == EntryKind::SavedSearch)
+        if (e.kind == EntryKind::Collection || e.kind == EntryKind::SavedSearch || (e.kind == EntryKind::Folder && onRemoveFolder))
             static_cast<Row*>(row)->onMenu = [this, i, row] {
                 entryMenu(static_cast<int>(i)).showMenuAsync(
                     juce::PopupMenu::Options().withTargetComponent(row).withParentComponent(getTopLevelComponent()),
@@ -295,6 +295,7 @@ juce::PopupMenu SidebarView::entryMenu(int index) const
     juce::PopupMenu menu;
     if (index < 0 || index >= static_cast<int>(entries_.size())) return menu;
     const auto kind = entries_[static_cast<std::size_t>(index)].kind;
+    if (kind == EntryKind::Folder && onRemoveFolder) menu.addItem(kRemoveFolder, "Remove from Library");
     if (kind != EntryKind::Collection && kind != EntryKind::SavedSearch) return menu;
     menu.addItem(kRename, juce::String::fromUTF8("Rename…"));
     menu.addItem(kDelete, "Delete");
@@ -305,6 +306,7 @@ void SidebarView::entryMenuChosen(int index, int result)
 {
     if (result == kRename) startRename(index);
     if (result == kDelete && onDelete) onDelete(index);
+    if (result == kRemoveFolder && onRemoveFolder) onRemoveFolder(index);
 }
 
 std::function<void(int)> SidebarView::entryMenuHandler(int index)
