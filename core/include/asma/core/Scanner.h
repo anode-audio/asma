@@ -65,4 +65,9 @@ RetryStats retryFiles(Db& db, const std::vector<std::int64_t>& fileIds,
 // size or mtime changes. Creates the row if the file is not known yet.
 void markFailedPath(Db& db, std::int64_t rootId, std::string_view relPath, std::string_view reason);
 
+// Reads a renamed or moved file's header and name again, so what its name and
+// folder say (BPM, key, loop, tags) follows it; analysis output stays. Does
+// nothing when the file cannot be read.
+void rederive(Db& db, std::int64_t fileId);
+
 } // namespace asma

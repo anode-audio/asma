@@ -4,6 +4,7 @@
 #include "asma/core/Backup.h"
 #include "asma/core/Fs.h"
 #include "asma/core/Library.h"
+#include "asma/core/Scanner.h"
 
 #include <algorithm>
 #include <cctype>
@@ -80,6 +81,16 @@ bool hasUserData(Db& db, std::int64_t fileId)
                         "OR EXISTS (SELECT 1 FROM collection_items WHERE file_id = ?1)");
     q.bind(1, fileId);
     return q.step() && q.getInt(0) != 0;
+}
+
+// What the new name says, read again; a file it cannot read keeps the old.
+void rederiveQuietly(Db& db, std::int64_t fileId)
+{
+    try {
+        rederive(db, fileId);
+    } catch (const std::exception&) {
+        // The next scan reads it.
+    }
 }
 
 bool sameFile(const fs::path& a, const fs::path& b)
@@ -353,6 +364,7 @@ OpResult FileOps::run(Operation op, std::vector<Step> steps, std::string groupLa
                 mark.bind(1, s.id);
                 mark.run();
                 tx.commit();
+                rederiveQuietly(db_, s.fileId);
             }
         } else if (s.op == "trash") {
             const TrashResult trashed = trash_.move(fromUtf8(s.src));
@@ -402,6 +414,31 @@ OpResult FileOps::run(Operation op, std::vector<Step> steps, std::string groupLa
     return result;
 }
 
+std::string FileOps::undoUnrecorded(Library& lib, const Step& s)
+{
+    const fs::path src = fromUtf8(s.src);
+    std::error_code ec;
+    const auto there = [&](const fs::path& p) { return fs::exists(fs::symlink_status(p, ec)); };
+    if (there(src)) return {}; // it never left
+    const std::string name = nameOf(s.src);
+    if (s.op == "trash") return name + " went to the Trash, and asma cannot bring it back from there";
+    if (s.op != "rename" && s.op != "move") return {};
+    // Halfway through a rename that only changes letter case.
+    const fs::path aside = src.parent_path() / (".asma-renaming-" + toUtf8(src.filename()));
+    fs::path from;
+    if (there(aside)) from = aside;
+    else if (const auto file = lib.fileById(s.fileId); file && !s.dst.empty() && there(fromUtf8(s.dst))) {
+        // Moved, not recorded: only the sample itself, as the library knows it.
+        const fs::path dst = fromUtf8(s.dst);
+        const auto size = fs::file_size(dst, ec);
+        const auto mtime = ec ? fs::file_time_type{} : fs::last_write_time(dst, ec);
+        if (!ec && static_cast<std::int64_t>(size) == file->size && fileTimeToInt(mtime) == file->mtime) from = dst;
+    }
+    if (from.empty()) return {}; // gone elsewhere: the next scan says so
+    if (const auto moved = renameNoReplace(from, src)) return name + " could not be moved back: " + moved.message();
+    return {};
+}
+
 void FileOps::rollBack(std::int64_t group, const char* state, OpResult& result)
 {
     Library lib(db_);
@@ -431,10 +468,18 @@ void FileOps::rollBack(std::int64_t group, const char* state, OpResult& result)
         q.run();
     };
     for (const auto& s : steps) {
-        if (s.state != "done") {
-            if (s.state == "planned") mark(s.id, "undone"); // never happened
+        if (s.state == "planned") {
+            // Not recorded as done, but a crash may have come between the
+            // file's change and its record: put back what the disk shows.
+            const std::string problem = undoUnrecorded(lib, s);
+            if (problem.empty()) mark(s.id, "undone");
+            else {
+                result.skipped.push_back(problem);
+                mark(s.id, "failed");
+            }
             continue;
         }
+        if (s.state != "done") continue;
         const std::string name = nameOf(s.src);
         if (s.op == "remove_root") {
             if (!lib.root(s.rootId)) {
@@ -493,6 +538,7 @@ void FileOps::rollBack(std::int64_t group, const char* state, OpResult& result)
         }
         mark(s.id, "undone");
         tx.commit();
+        if (!trashed) rederiveQuietly(db_, s.fileId);
     }
     auto finish = db_.prepare("UPDATE journal_groups SET state = ? WHERE id = ?");
     finish.bind(1, std::string_view(state)).bind(2, group);
@@ -599,7 +645,8 @@ std::string interruptedText(const OpResult& r)
     case Operation::RemoveFolder: doing = "removing " + r.name + " from the library"; break;
     }
     std::string text = "asma was interrupted while " + doing + "; ";
-    if (r.op == Operation::RemoveFolder) text += "it is back in the library.";
+    if (!r.skipped.empty()) text += r.skipped.size() < r.count ? "the rest are back where they were." : "it could not be put back.";
+    else if (r.op == Operation::RemoveFolder) text += "it is back in the library.";
     else text += r.count == 1 ? "it is back where it was." : "they are back where they were.";
     for (const auto& s : r.skipped) text += " " + s + ".";
     return text;

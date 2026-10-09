@@ -9,6 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <map>
 
 using namespace asma;
@@ -273,4 +275,55 @@ TEST_CASE("The journal keeps the newest 50 groups; older trashed samples go for 
     CHECK_FALSE(Library(lib.db).fileById(lib.id["kick.wav"])); // its row went with its group
     CHECK_FALSE(UserData(lib.db).rating(lib.id["kick.wav"]));
     CHECK(Library(lib.db).fileById(lib.id["hat.wav"]));
+}
+
+TEST_CASE("Recovery puts back what a crash left between a file's change and its record", "[fileops]")
+{
+    Lib lib;
+    {
+        auto ops = lib.ops();
+        ops.crashAfter(0);
+        CHECK_THROWS_AS(ops.rename(lib.id["kick.wav"], "KICK.wav"), SimulatedCrash);
+        ops.crashAfter(0);
+        CHECK_THROWS_AS(ops.move({lib.id["snare.wav"]}, lib.samples / "Drums"), SimulatedCrash);
+        ops.crashAfter(0);
+        CHECK_THROWS_AS(ops.trash({lib.id["hat.wav"]}), SimulatedCrash);
+    }
+    // What each crash left on disk: halfway through a case-only rename,
+    // moved but not recorded, trashed but not recorded.
+    fs::rename(lib.samples / "kick.wav", lib.samples / ".asma-renaming-kick.wav");
+    fs::rename(lib.samples / "snare.wav", lib.samples / "Drums" / "snare.wav");
+    fs::rename(lib.samples / "hat.wav", lib.trashDir / "hat.wav");
+
+    auto ops = lib.ops();
+    const auto recovered = ops.recover();
+    REQUIRE(recovered.size() == 3);
+    CHECK(fs::exists(lib.samples / "kick.wav"));
+    CHECK_FALSE(fs::exists(lib.samples / ".asma-renaming-kick.wav"));
+    CHECK(fs::exists(lib.samples / "snare.wav"));
+    CHECK_FALSE(fs::exists(lib.samples / "Drums" / "snare.wav"));
+    const auto trash = std::find_if(recovered.begin(), recovered.end(),
+                                    [](const OpResult& r) { return r.op == Operation::Trash; });
+    REQUIRE(trash != recovered.end());
+    CHECK(interruptedText(*trash)
+          == "asma was interrupted while moving hat.wav to the Trash; it could not be put back. "
+             "hat.wav went to the Trash, and asma cannot bring it back from there.");
+}
+
+TEST_CASE("What a sample's name says follows a rename and its undo", "[fileops]")
+{
+    Lib lib;
+    test::WavSpec spec;
+    spec.seed = 7;
+    test::writeWav(lib.samples / "Bass_Loop_Am_128.wav", spec);
+    scanRoot(lib.db, lib.root);
+    Library library(lib.db);
+    const auto id = library.fileByPath(lib.root, "Bass_Loop_Am_128.wav")->id;
+    const auto bpm = [&] { return library.derived(id)->bpm.value_or(0.0); };
+    REQUIRE(std::abs(bpm() - 128.0) < 1e-9);
+    auto ops = lib.ops();
+    ops.rename(id, "Bass_Loop_Am_120.wav");
+    CHECK(std::abs(bpm() - 120.0) < 1e-9);
+    ops.undo();
+    CHECK(std::abs(bpm() - 128.0) < 1e-9);
 }

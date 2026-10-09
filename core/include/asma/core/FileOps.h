@@ -2,6 +2,7 @@
 #pragma once
 
 #include "asma/core/Db.h"
+#include "asma/core/Library.h"
 #include "asma/core/Trash.h"
 
 #include <cstddef>
@@ -93,6 +94,9 @@ private:
     struct Step;
     OpResult run(Operation op, std::vector<Step> steps, std::string label, std::string name);
     void rollBack(std::int64_t group, const char* state, OpResult& result);
+    // A planned step whose file a crash changed before its record: puts it
+    // back. Empty when done or nothing to do, else what could not be.
+    std::string undoUnrecorded(Library& lib, const Step& step);
     void prune();
 
     Db& db_;

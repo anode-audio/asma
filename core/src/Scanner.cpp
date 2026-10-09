@@ -428,4 +428,19 @@ void markFailedPath(Db& db, std::int64_t rootId, std::string_view relPath, std::
     tx.commit();
 }
 
+void rederive(Db& db, std::int64_t fileId)
+{
+    Library lib(db);
+    const auto file = lib.fileById(fileId);
+    if (!file) return;
+    const auto root = lib.root(file->rootId);
+    if (!root) return;
+    const Job job{JobKind::Changed, {file->relPath, file->size, file->mtime}, *file};
+    const JobResult r = process(fromUtf8(root->path), job);
+    if (!r.probe) return;
+    Transaction tx(db);
+    lib.setDerived(fileId, derive(r));
+    tx.commit();
+}
+
 } // namespace asma
