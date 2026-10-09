@@ -144,3 +144,30 @@ TEST_CASE("The file operations job adds a folder in place of those inside it", "
     Db db = Db::open(f.dbPath);
     CHECK(Library(db).roots().size() == 1);
 }
+
+TEST_CASE("The file operations job recovers before any request when it could not at its start", "[fileopsjob]")
+{
+    test::LibraryFixture f;
+    f.scan();
+    {
+        Db db = Db::open(f.dbPath);
+        Library lib(db);
+        FileOps ops(db, folderTrash(f.dir.path() / "Trash"));
+        ops.crashAfter(1);
+        CHECK_THROWS_AS(ops.trash({lib.fileByAbsolutePath(f.loop)->id, lib.fileByAbsolutePath(f.kick)->id}),
+                        SimulatedCrash);
+    }
+    auto lock = WriterLock::tryAcquire(f.dbPath.parent_path()); // a long scan
+    REQUIRE(lock);
+    FileOpsJob job(f.dbPath, folderTrash(f.dir.path() / "Trash"), std::chrono::milliseconds(300));
+    settle(job);
+    CHECK(job.messageCount() == 0); // it gave up waiting
+    lock.reset();
+    FileOutcome got;
+    job.run(FileRequest::undo(), [&](const FileOutcome& o) { got = o; });
+    settle(job);
+    CHECK(got.text
+          == "asma was interrupted while moving 2 samples to the Trash; they are back where they were. Nothing to undo.");
+    CHECK(fs::exists(f.loop));
+    CHECK(fs::exists(f.kick));
+}

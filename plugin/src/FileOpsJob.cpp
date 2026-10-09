@@ -171,17 +171,20 @@ FileOutcome FileOpsJob::carryOut(const FileRequest& request)
         }
         std::this_thread::sleep_for(kLockPoll);
     }
+    // Every request first rolls back what an interrupted asma left and
+    // merges nested folders, which the first one does unless a long scan kept
+    // the lock from it; both cost nothing when there is nothing to do.
+    std::string said;
+    const auto say = [&](const std::string& text) {
+        if (!text.empty()) said += (said.empty() ? "" : " ") + text;
+    };
     try {
         Db db = Db::open(dbPath_);
         FileOps ops(db, trash_);
+        for (const auto& r : ops.recover()) say(interruptedText(r));
+        for (const auto& m : mergeNestedFolders(db)) say(m);
         switch (request.kind) {
-        case Kind::Startup: {
-            std::string said;
-            for (const auto& r : ops.recover()) said += (said.empty() ? "" : " ") + interruptedText(r);
-            for (const auto& m : mergeNestedFolders(db)) said += (said.empty() ? "" : " ") + m;
-            outcome.text = said;
-            break;
-        }
+        case Kind::Startup: break;
         case Kind::Undo: {
             const auto r = ops.undo();
             outcome.text = r ? undoneText(*r) : "Nothing to undo.";
@@ -216,13 +219,17 @@ FileOutcome FileOpsJob::carryOut(const FileRequest& request)
         }
         }
         outcome.done = true;
+        say(outcome.text);
+        outcome.text = said;
         const auto next = ops.undoable();
         const std::lock_guard guard(mutex_);
         undoLabel_ = next ? next->label : std::string();
     } catch (const OperationRefused& e) {
-        outcome.text = e.what();
+        say(e.what());
+        outcome.text = said;
     } catch (const std::exception& e) {
-        outcome.text = std::string("Could not do that: ") + e.what();
+        say(std::string("Could not do that: ") + e.what());
+        outcome.text = said;
     }
     return outcome;
 }
