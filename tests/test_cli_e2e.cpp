@@ -2,10 +2,13 @@
 #include "TestUtil.h"
 #include "asma/audio/SampleSource.h"
 #include "asma/core/Db.h"
+#include "asma/core/FileOps.h"
+#include "asma/core/Library.h"
 #include "asma/core/Fs.h"
 #include "asma/core/WriterLock.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
@@ -487,4 +490,96 @@ TEST_CASE("two repairs at once on a damaged library: one rebuilds, the other wai
     lock.reset();
     CHECK(cli.runAsma("repair").out.rfind("{\"result\":\"repaired\"", 0) == 0);
     CHECK(cli.runAsma("repair").out == "{\"result\":\"healthy\"}\n");
+}
+
+TEST_CASE("rename, move, trash, undo and history from the CLI", "[e2e][files]")
+{
+    Cli cli;
+#ifdef __linux__
+    asma::test::ScopedEnv xdg("XDG_DATA_HOME", (cli.dir.path() / "share").string().c_str());
+#endif
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
+    const fs::path loop = cli.lib / "Loops" / "Bass_Loop_Am_128.wav";
+    const fs::path kick = cli.lib / "Drums" / asma::fromUtf8("Kick Ü_01.wav");
+    REQUIRE(cli.runAsma("rate 4 " + quote(loop)).exitCode == 0);
+
+    const RunResult renamed = cli.runAsma("rename " + quote(loop) + " Bass_Loop_Am_120.wav");
+    CHECK(renamed.exitCode == 0);
+    CHECK(renamed.out == "Rename Bass_Loop_Am_128.wav\n");
+    const fs::path loop120 = cli.lib / "Loops" / "Bass_Loop_Am_120.wav";
+    CHECK(fs::exists(loop120));
+    CHECK(cli.runAsma("query --min-rating 4").out.find("Bass_Loop_Am_120.wav") != std::string::npos);
+
+    const RunResult moved = cli.runAsma("move " + quote(loop120) + " --to " + quote(cli.lib / "Drums") + " --json");
+    CHECK(moved.exitCode == 0);
+    CHECK(moved.out.find("\"label\":\"Move Bass_Loop_Am_120.wav\"") != std::string::npos);
+    CHECK(fs::exists(cli.lib / "Drums" / "Bass_Loop_Am_120.wav"));
+    const RunResult refused = cli.runAsma("--errors-to-stdout move " + quote(kick) + " --to " + quote(cli.lib / "Drums"));
+    CHECK(refused.exitCode == 1);
+    CHECK(refused.out == "error: Kick Ü_01.wav is already in Drums.\n");
+
+    const RunResult trashed = cli.runAsma("trash " + quote(kick));
+    CHECK(trashed.exitCode == 0);
+    CHECK(trashed.out == "Move Kick Ü_01.wav to the Trash\n");
+    CHECK_FALSE(fs::exists(kick));
+    const RunResult history = cli.runAsma("history");
+    CHECK(history.out.find("done\tMove Kick Ü_01.wav to the Trash\n") != std::string::npos);
+
+    CHECK(cli.runAsma("undo").out == "Undid Move Kick Ü_01.wav to the Trash.\n");
+    CHECK(fs::exists(kick));
+    CHECK(cli.runAsma("undo").exitCode == 0);
+    CHECK(cli.runAsma("undo").out == "Undid Rename Bass_Loop_Am_128.wav.\n");
+    CHECK(fs::exists(loop));
+    CHECK(cli.runAsma("undo").out == "nothing to undo\n");
+
+    CHECK(cli.runAsma("remove-folder " + quote(cli.lib)).out == "Remove Café Samples from the Library\n");
+    CHECK(cli.runAsma("query").out.empty());
+    CHECK(cli.runAsma("undo").exitCode == 0);
+    CHECK(cli.runAsma("query").out.find("Bass_Loop_Am_128.wav") != std::string::npos);
+
+    const auto lock = asma::WriterLock::tryAcquire(cli.db.parent_path());
+    REQUIRE(lock);
+    CHECK(cli.runAsma("trash " + quote(kick)).exitCode == 3);
+    CHECK(fs::exists(kick));
+}
+
+TEST_CASE("root add refuses a folder inside one, and takes the place of those inside with --merge", "[e2e][files]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib / "Drums")).exitCode == 0);
+    const RunResult refused = cli.runAsma("--errors-to-stdout root add " + quote(cli.lib));
+    CHECK(refused.exitCode == 1);
+    CHECK(refused.out
+          == "error: Café Samples contains a folder already in the library (Drums). Add Café Samples in its place? "
+             "(root add --merge does)\n");
+    CHECK(cli.runAsma("root add --merge " + quote(cli.lib)).exitCode == 0);
+    const RunResult list = cli.runAsma("root list");
+    CHECK(std::count(list.out.begin(), list.out.end(), '\n') == 1);
+    CHECK(cli.runAsma("--errors-to-stdout root add " + quote(cli.lib / "Loops")).out
+          == "error: Loops is already in the library, inside Café Samples.\n");
+}
+
+TEST_CASE("a CLI write first rolls back a group an interrupted process left", "[e2e][files]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib)).exitCode == 0);
+    REQUIRE(cli.runAsma("scan --no-analysis").exitCode == 0);
+    const fs::path loop = cli.lib / "Loops" / "Bass_Loop_Am_128.wav";
+    {
+        asma::Db db = asma::Db::open(cli.db);
+        asma::Library lib(db);
+        std::vector<std::int64_t> ids;
+        for (const auto& f : lib.filesInRoot(lib.roots().front().id)) ids.push_back(f.id);
+        asma::FileOps ops(db);
+        ops.crashAfter(1);
+        CHECK_THROWS_AS(ops.move(ids, cli.lib), asma::SimulatedCrash);
+    }
+    const bool loopMoved = fs::exists(cli.lib / "Bass_Loop_Am_128.wav");
+    const bool kickMoved = fs::exists(cli.lib / asma::fromUtf8("Kick Ü_01.wav"));
+    CHECK(loopMoved != kickMoved); // one step of two ran
+    CHECK(cli.runAsma("undo").out
+          == "asma was interrupted while moving 2 samples; they are back where they were.\nnothing to undo\n");
+    CHECK(fs::exists(loop));
+    CHECK(fs::exists(cli.lib / "Drums" / asma::fromUtf8("Kick Ü_01.wav")));
 }

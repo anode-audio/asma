@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "Args.h"
 #include "CliCommon.h"
+#include "FileCommands.h"
 #include "OrganiseCommands.h"
 #include "SearchArgs.h"
 
@@ -33,7 +34,7 @@ namespace {
 
 constexpr const char* kUsageText =
     "usage: asma [--db PATH] [--errors-to-stdout] <command>\n"
-    "  root add <dir>          add a sample folder\n"
+    "  root add [--merge] <dir>  add a sample folder (--merge: in place of those inside it)\n"
     "  root list               list sample folders\n"
     "  scan [--root ID] [--threads N] [--no-analysis]\n"
     "  query [words...] [--saved NAME] [--type loop|oneshot|any] [--bpm N|MIN-MAX]\n"
@@ -53,6 +54,12 @@ constexpr const char* kUsageText =
     "         [--tempo BPM] [--key K] [--transpose N] [--rate HZ] [--renders DIR]\n"
     "                          print the file to drag, rendering edits if any\n"
     "  renders [clear] [--renders DIR]   size of the kept renders, or delete them\n"
+    "  rename <file> | --id N <new name> [--json]\n"
+    "  move <file>... | --id N... --to FOLDER [--json]\n"
+    "  trash <file>... | --id N... [--json]   to the system's trash\n"
+    "  remove-folder <folder> [--json]   take a folder out of the library (its data is kept)\n"
+    "  undo [--json]           undo the last file operation\n"
+    "  history [--json]        the last file operations\n"
     "  check                   is the library sound? (JSON)\n"
     "  backup [--out FILE]     write the user data beside the library, or to FILE\n"
     "  restore FILE            give the library a backup's user data\n"
@@ -101,14 +108,7 @@ int cmdRoot(Args& args, Db& db)
 {
     Library lib(db);
     const auto sub = args.positional();
-    if (sub == "add") {
-        const auto dir = args.positional();
-        if (!dir) throw UsageError("root add needs a directory");
-        rejectLeftovers(args);
-        const auto id = lib.addRoot(fromUtf8(*dir));
-        std::cout << "root " << id << " " << lib.root(id)->path << "\n";
-        return kOk;
-    }
+    if (sub == "add") return cmdRootAdd(args, db);
     if (sub == "list") {
         rejectLeftovers(args);
         for (const auto& r : lib.roots()) std::cout << r.id << "\t" << r.path << "\t" << (r.enabled ? "on" : "off") << "\n";
@@ -381,6 +381,7 @@ int main(int argc, char** argv)
             {"render", cmdRender},
             {"renders", cmdRenders},
             {"restore", cmdRestore},
+            {"history", cmdHistory},
         };
         if (*command == "scan") {
             Db db = Db::open(dbPath);
@@ -393,6 +394,11 @@ int main(int argc, char** argv)
         if (*command == "backup") {
             Db db = Db::open(dbPath);
             return cmdBackup(args, db, dbPath);
+        }
+        for (const char* op : {"rename", "move", "trash", "remove-folder", "undo"}) {
+            if (*command != op) continue;
+            Db db = Db::open(dbPath);
+            return cmdFileOperation(*command, args, db, dbPath);
         }
         if (*command == "retry") {
             Db db = Db::open(dbPath);
