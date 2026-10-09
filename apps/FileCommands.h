@@ -15,7 +15,8 @@ namespace asma::cli {
 int cmdFileOperation(const std::string& command, Args& args, Db& db, const std::filesystem::path& dbPath);
 // The newest groups: "id<TAB>at<TAB>state<TAB>label", or JSON lines.
 int cmdHistory(Args& args, Db& db);
-// root add, refusing a folder inside one and merging those inside it with --merge.
-int cmdRootAdd(Args& args, Db& db);
+// root add, refusing a folder inside one and merging those inside it with
+// --merge; under the writer lock, as the file commands are.
+int cmdRootAdd(Args& args, Db& db, const std::filesystem::path& dbPath);
 
 } // namespace asma::cli

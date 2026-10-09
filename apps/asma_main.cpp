@@ -104,11 +104,11 @@ void printRows(const std::vector<SearchRow>& rows, bool json, const std::vector<
     }
 }
 
-int cmdRoot(Args& args, Db& db)
+int cmdRoot(Args& args, Db& db, const std::filesystem::path& dbPath)
 {
     Library lib(db);
     const auto sub = args.positional();
-    if (sub == "add") return cmdRootAdd(args, db);
+    if (sub == "add") return cmdRootAdd(args, db, dbPath);
     if (sub == "list") {
         rejectLeftovers(args);
         for (const auto& r : lib.roots()) std::cout << r.id << "\t" << r.path << "\t" << (r.enabled ? "on" : "off") << "\n";
@@ -370,7 +370,6 @@ int main(int argc, char** argv)
         if (!command) throw UsageError("missing command");
         using Command = int (*)(Args&, Db&);
         const std::pair<const char*, Command> commands[] = {
-            {"root", cmdRoot},
             {"query", cmdQuery},
             {"similar", cmdSimilar},
             {"rate", cmdRate},
@@ -383,6 +382,10 @@ int main(int argc, char** argv)
             {"restore", cmdRestore},
             {"history", cmdHistory},
         };
+        if (*command == "root") {
+            Db db = Db::open(dbPath);
+            return cmdRoot(args, db, dbPath);
+        }
         if (*command == "scan") {
             Db db = Db::open(dbPath);
             return cmdScan(args, db, dbPath);

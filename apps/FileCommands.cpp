@@ -129,12 +129,19 @@ int cmdHistory(Args& args, Db& db)
     return kOk;
 }
 
-int cmdRootAdd(Args& args, Db& db)
+int cmdRootAdd(Args& args, Db& db, const std::filesystem::path& dbPath)
 {
     const bool merge = args.flag("merge");
     const auto dir = args.positional();
     if (!dir) throw UsageError("root add needs a directory");
     rejectLeftovers(args);
+    // A merge rewrites rows a scan or a file operation may be working on.
+    const auto lock = WriterLock::tryAcquire(dbPath.parent_path());
+    if (!lock) {
+        std::cerr << "asma: another asma process is writing to this library\n";
+        return kLocked;
+    }
+    for (const auto& r : FileOps(db).recover()) std::cout << interruptedText(r) << "\n";
     const AddCheck check = checkAddFolder(db, fromUtf8(*dir));
     if (check.result == AddCheck::Result::Contains && !merge)
         throw OperationRefused(check.message + " (root add --merge does)");

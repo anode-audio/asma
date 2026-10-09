@@ -583,3 +583,15 @@ TEST_CASE("a CLI write first rolls back a group an interrupted process left", "[
     CHECK(fs::exists(loop));
     CHECK(fs::exists(cli.lib / "Drums" / asma::fromUtf8("Kick Ü_01.wav")));
 }
+
+TEST_CASE("root add waits for no one: it takes the writer lock or exits 3", "[e2e][files]")
+{
+    Cli cli;
+    REQUIRE(cli.runAsma("root add " + quote(cli.lib / "Drums")).exitCode == 0);
+    {
+        const auto lock = asma::WriterLock::tryAcquire(cli.db.parent_path());
+        REQUIRE(lock);
+        CHECK(cli.runAsma("root add --merge " + quote(cli.lib)).exitCode == 3);
+    }
+    CHECK(cli.runAsma("root add --merge " + quote(cli.lib)).exitCode == 0);
+}
